@@ -247,6 +247,29 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--text
 .seg-dist { font-size:10px; color:var(--muted); font-family:var(--mono); }
 .seg-pct { font-family:var(--mono); font-size:12px; font-weight:500; }
 
+/* Rutas alternativas */
+.route-cards { display:flex; flex-direction:column; gap:7px; margin-bottom:14px; }
+.route-card {
+  background:var(--card); border:1.5px solid var(--border);
+  border-radius:10px; padding:11px 12px; cursor:pointer;
+  transition:all .15s; position:relative; overflow:hidden;
+}
+.route-card:hover { border-color:var(--border2); background:#1e1e28; }
+.route-card.selected { border-color:var(--accent); background:rgba(124,106,247,0.08); }
+.route-card.best { border-color:var(--green); background:rgba(74,222,128,0.06); }
+.route-badge {
+  font-family:var(--mono); font-size:9px; letter-spacing:1px; text-transform:uppercase;
+  padding:2px 7px; border-radius:4px; display:inline-block; margin-bottom:6px;
+}
+.badge-fastest { background:rgba(124,106,247,0.2); color:var(--accent); }
+.badge-shadiest { background:rgba(74,222,128,0.2); color:var(--green); }
+.badge-balanced { background:rgba(251,191,36,0.2); color:var(--yellow); }
+.route-card-row { display:flex; align-items:center; gap:8px; }
+.route-shade-bar { flex:1; height:5px; border-radius:3px; background:rgba(255,255,255,0.07); overflow:hidden; }
+.route-shade-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#4ade80,#22c55e); }
+.route-stats { display:flex; gap:10px; margin-top:6px; font-size:11px; color:var(--muted); font-family:var(--mono); }
+.route-stats b { color:var(--text); }
+
 /* Status bar */
 #statusbar {
   padding:8px 16px; border-top:1px solid var(--border);
@@ -413,6 +436,10 @@ html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--text
   </div>
 
   <div id="results">
+    <div id="route-selector" style="display:none; padding:0 0 4px;">
+      <div class="sum-header" style="padding-top:4px">Rutas disponibles</div>
+      <div class="route-cards" id="route-cards"></div>
+    </div>
     <div id="empty-state">
       <div class="empty-icon">🗺️</div>
       <div class="empty-txt">Busca una ciudad, marca origen<br>y destino para calcular la ruta<br>con más sombra.</div>
@@ -780,16 +807,16 @@ function updateBtn() {
 
 const ORS_API_KEY = ''; // opcional — sin key funciona con límite menor
 
-async function getRoute(a, b) {
+async function getRoute(a, b, waypoint=null) {
   // a y b son [lon, lat]
 
   // 1. Intentar OpenRouteService (foot-walking con aceras)
   try {
     const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
     if (ORS_API_KEY) headers['Authorization'] = ORS_API_KEY;
-
-    const body = JSON.stringify({
-      coordinates: [a, b],
+    const coords = waypoint ? [a, waypoint, b] : [a, b];
+    const body2 = JSON.stringify({
+      coordinates: coords,
       preference: 'recommended',
       units: 'm',
       language: 'es',
@@ -800,7 +827,7 @@ async function getRoute(a, b) {
     });
 
     const r = await fetch('https://api.openrouteservice.org/v2/directions/foot-walking/geojson', {
-      method: 'POST', headers, body
+      method: 'POST', headers, body: body2
     });
     if (r.ok) {
       const d = await r.json();
@@ -817,8 +844,11 @@ async function getRoute(a, b) {
 
   // 2. Fallback: Valhalla pedestrian
   try {
+    const vLocs = waypoint
+      ? [{ lon:a[0],lat:a[1] }, { lon:waypoint[0],lat:waypoint[1] }, { lon:b[0],lat:b[1] }]
+      : [{ lon:a[0],lat:a[1] }, { lon:b[0],lat:b[1] }];
     const body = JSON.stringify({
-      locations: [{ lon: a[0], lat: a[1] }, { lon: b[0], lat: b[1] }],
+      locations: vLocs,
       costing: 'pedestrian',
       costing_options: { pedestrian: { walking_speed: 4.5, use_living_streets: 1 } },
       directions_options: { units: 'km' }
@@ -991,6 +1021,73 @@ function isInShadow(point, sun, buildings) {
 }
 
 // ════════════════════════════════════════════════════
+// DESPLAZAR RUTA HACIA LA ACERA CON MÁS SOMBRA
+// ════════════════════════════════════════════════════
+const SIDEWALK_OFFSET = 0.000055; // ~6 metros en grados — ancho medio de acera
+
+// Desplazar un punto perpendicular a la dirección de la calle
+function offsetPoint(lon, lat, bearing, offsetMeters) {
+  const mPerDegLat = 111000;
+  const mPerDegLon = 111000 * Math.cos(lat * Math.PI / 180);
+  // Perpendicular al bearing: bearing + 90
+  const perpRad = (bearing + 90) * Math.PI / 180;
+  return [
+    lon + (offsetMeters * Math.sin(perpRad)) / mPerDegLon,
+    lat + (offsetMeters * Math.cos(perpRad)) / mPerDegLat
+  ];
+}
+
+// Calcular bearing entre dos puntos
+function bearing(a, b) {
+  const dLon = (b[0] - a[0]);
+  const dLat = (b[1] - a[1]);
+  return Math.atan2(dLon, dLat) * 180 / Math.PI;
+}
+
+// Para cada segmento, evaluar qué acera (izq o derecha) tiene más sombra
+// y desplazar la ruta hacia ese lado
+function shiftRouteToBestSidewalk(segments, buildings, sun) {
+  if (sun.el <= 0) return segments; // noche, no importa
+
+  const OFFSET = 6; // metros de desplazamiento (ancho acera aprox)
+  const shifted = [];
+
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    const brng = bearing(s.a, s.b);
+
+    // Evaluar 3 puntos de muestra en cada acera
+    let shadeLeft = 0, shadeRight = 0;
+    for (let t = 0.2; t <= 0.8; t += 0.3) {
+      const mx = s.a[0] + (s.b[0]-s.a[0])*t;
+      const my = s.a[1] + (s.b[1]-s.a[1])*t;
+      const [lx, ly] = offsetPoint(mx, my, brng, -OFFSET); // izquierda
+      const [rx, ry] = offsetPoint(mx, my, brng, OFFSET);  // derecha
+      if (isInShadow([lx,ly], sun, buildings)) shadeLeft++;
+      if (isInShadow([rx,ry], sun, buildings)) shadeRight++;
+    }
+
+    // Elegir la acera con más sombra
+    const bestOffset = shadeLeft >= shadeRight ? -OFFSET : OFFSET;
+    const newShade = Math.max(shadeLeft, shadeRight) > 0;
+
+    // Desplazar los puntos del segmento
+    const newA = offsetPoint(s.a[0], s.a[1], brng, bestOffset);
+    const newB = offsetPoint(s.b[0], s.b[1], brng, bestOffset);
+    const newMid = [(newA[0]+newB[0])/2, (newA[1]+newB[1])/2];
+
+    shifted.push({
+      ...s,
+      a: newA, b: newB, mid: newMid,
+      shade: newShade,
+      sidewalk: bestOffset < 0 ? 'izquierda' : 'derecha'
+    });
+  }
+
+  return shifted;
+}
+
+// ════════════════════════════════════════════════════
 // DIBUJAR SOMBRAS DE EDIFICIOS EN EL MAPA
 // ════════════════════════════════════════════════════
 function drawBuildingShadows(buildings, sun) {
@@ -1131,12 +1228,21 @@ async function calcRoute() {
     }
     console.log(`Segmentos: ${totalSegs} total, ${shadeCount} en sombra`);
 
-    drawRoute(segments);
+    // Desplazar ruta hacia la acera con más sombra
+    const shiftedSegments = shiftRouteToBestSidewalk(segments, buildings, sun);
+    // Recalcular estadísticas con la ruta desplazada
+    let shiftedShadeDist = 0;
+    shiftedSegments.forEach(s => { if(s.shade) shiftedShadeDist += s.dist; });
+    const shiftedShadePct = totalDist > 0 ? Math.round(shiftedShadeDist/totalDist*100) : shadePct;
+
+    drawRoute(shiftedSegments);
     drawBuildingShadows(buildings, sun);
 
     const shadePct = totalDist>0 ? Math.round(shadeDist/totalDist*100) : 0;
-    document.getElementById('r-shade').textContent = shadePct+'%';
-    document.getElementById('r-sun').textContent = (100-shadePct)+'%';
+    // Usar el % de la ruta desplazada (más preciso)
+    const finalShadePct = typeof shiftedShadePct !== 'undefined' ? shiftedShadePct : shadePct;
+    document.getElementById('r-shade').textContent = finalShadePct+'%';
+    document.getElementById('r-sun').textContent = (100-finalShadePct)+'%';
     document.getElementById('r-dist').textContent = distKm+'km';
     document.getElementById('shade-fill').style.width = shadePct+'%';
 
@@ -1149,10 +1255,11 @@ async function calcRoute() {
       <span class="tag"><b>📏</b> ${distKm} km</span>
     `;
 
-    // Tramos agrupados
+    // Tramos agrupados (usar segmentos desplazados)
+    const displaySegments = typeof shiftedSegments !== 'undefined' ? shiftedSegments : segments;
     const groups=[];
     let cur=null;
-    for(const s of segments){
+    for(const s of displaySegments){
       if(!cur||cur.shade!==s.shade){if(cur)groups.push(cur);cur={shade:s.shade,dist:0,segs:[s]};}
       else cur.segs.push(s);
       cur.dist+=s.dist;
