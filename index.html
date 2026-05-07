@@ -615,10 +615,16 @@ function sunPosition(date, lat, lon) {
 }
 
 // Actualizar reloj solar en tiempo real
+let cachedBuildings = [];
 function updateClock() {
   const tv = document.getElementById('dt-time').value || '12:00';
   document.getElementById('sun-clock').textContent = '☀ ' + tv;
   updateSunLight();
+  // Redibujar sombras en tiempo real si ya hay edificios cargados
+  if (cachedBuildings.length > 0 && mapgl) {
+    const sun = getSunPos();
+    drawBuildingShadows(cachedBuildings, sun);
+  }
 }
 document.getElementById('dt-time').addEventListener('input', updateClock);
 document.getElementById('dt-date').addEventListener('change', updateClock);
@@ -766,15 +772,80 @@ function updateBtn() {
 }
 
 // ════════════════════════════════════════════════════
-// ROUTING — OSRM
+// ROUTING — Valhalla (perfil peatonal real)
 // ════════════════════════════════════════════════════
 async function getRoute(a, b) {
-  const url = `https://router.project-osrm.org/route/v1/foot/${a[0]},${a[1]};${b[0]},${b[1]}?overview=full&geometries=geojson&steps=true`;
+  // a y b son [lon, lat]
+  const body = JSON.stringify({
+    locations: [
+      { lon: a[0], lat: a[1] },
+      { lon: b[0], lat: b[1] }
+    ],
+    costing: 'pedestrian',
+    costing_options: {
+      pedestrian: {
+        walking_speed: 4.5,
+        use_ferry: 0,
+        use_living_streets: 1,
+        use_tracks: 0,
+        service_penalty: 0,
+        service_factor: 1
+      }
+    },
+    directions_options: { units: 'km', language: 'es-ES' },
+    shape_match: 'walk_or_snap'
+  });
+
+  const endpoints = [
+    'https://valhalla1.openstreetmap.de/route',
+    'https://valhalla.openstreetmap.de/route'
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      });
+      if (!r.ok) continue;
+      const d = await r.json();
+      if (!d.trip) throw new Error('Sin ruta');
+
+      // Decodificar shape encoded polyline de Valhalla
+      const coords = decodePolyline(d.trip.legs[0].shape, 6);
+      const distance = d.trip.summary.length * 1000; // km → m
+      const duration = d.trip.summary.time;
+
+      return { geometry: { coordinates: coords }, distance, duration };
+    } catch(e) { console.warn(ep, e.message); }
+  }
+
+  // Fallback: OSRM si Valhalla no responde
+  console.warn('Valhalla no disponible, usando OSRM foot');
+  const url = `https://router.project-osrm.org/route/v1/foot/${a[0]},${a[1]};${b[0]},${b[1]}?overview=full&geometries=geojson`;
   const r = await fetch(url);
   if (!r.ok) throw new Error('OSRM ' + r.status);
   const d = await r.json();
   if (d.code !== 'Ok') throw new Error(d.message);
   return d.routes[0];
+}
+
+// Decodificar Google Encoded Polyline (precision 6 para Valhalla)
+function decodePolyline(encoded, precision=6) {
+  const factor = Math.pow(10, precision);
+  const coords = [];
+  let index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let b, shift = 0, result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift = 0; result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    coords.push([lng / factor, lat / factor]); // [lon, lat] para Mapbox
+  }
+  return coords;
 }
 
 // ════════════════════════════════════════════════════
@@ -909,6 +980,64 @@ function isInShadow(point, sun, buildings) {
 }
 
 // ════════════════════════════════════════════════════
+// DIBUJAR SOMBRAS DE EDIFICIOS EN EL MAPA
+// ════════════════════════════════════════════════════
+function drawBuildingShadows(buildings, sun) {
+  // Limpiar capa anterior
+  if (mapgl.getLayer('building-shadows')) mapgl.removeLayer('building-shadows');
+  if (mapgl.getSource('building-shadows')) mapgl.removeSource('building-shadows');
+
+  if (sun.el <= 0 || sun.el > 75) return; // noche o sol en cénit
+
+  const features = [];
+
+  for (const b of buildings) {
+    if (!b.coords || b.coords.length < 3) continue;
+
+    const azRad = sun.az * Math.PI / 180;
+    const shadowLen = b.h / Math.tan(sun.el * Math.PI / 180);
+    const refLat = b.coords[0][1];
+    const mPerDegLon = 111000 * Math.cos(refLat * Math.PI / 180);
+    const mPerDegLat = 111000;
+
+    // Desplazamiento de sombra (opuesto al sol)
+    const sdLon = -(shadowLen * Math.sin(azRad)) / mPerDegLon;
+    const sdLat = -(shadowLen * Math.cos(azRad)) / mPerDegLat;
+
+    // Polígono de sombra = convex hull de (edificio + edificio desplazado)
+    const shifted = b.coords.map(([lon, lat]) => [lon + sdLon, lat + sdLat]);
+    const allPts = [...b.coords, ...shifted];
+    const hull = convexHull(allPts);
+    if (hull.length < 3) continue;
+
+    // Cerrar el polígono
+    const ring = [...hull, hull[0]];
+
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [ring] }
+    });
+  }
+
+  if (!features.length) return;
+
+  mapgl.addSource('building-shadows', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features }
+  });
+
+  mapgl.addLayer({
+    id: 'building-shadows',
+    type: 'fill',
+    source: 'building-shadows',
+    paint: {
+      'fill-color': '#000000',
+      'fill-opacity': 0.35
+    }
+  }, '3d-buildings'); // insertar debajo de los edificios 3D
+}
+
+// ════════════════════════════════════════════════════
 // DIBUJAR RUTA EN MAPA
 // ════════════════════════════════════════════════════
 function drawRoute(segments) {
@@ -952,6 +1081,8 @@ async function calcRoute() {
   document.getElementById('empty-state').style.display='none';
   document.getElementById('summary').style.display='none';
   document.getElementById('seg-list').innerHTML='';
+  if (mapgl.getLayer('building-shadows')) mapgl.removeLayer('building-shadows');
+  if (mapgl.getSource('building-shadows')) mapgl.removeSource('building-shadows');
 
   try {
     setStatus('Calculando ruta a pie…', true);
@@ -964,6 +1095,7 @@ async function calcRoute() {
 
     setStatus('Descargando edificios OSM…', true);
     const buildings = await getBuildings(coords);
+    cachedBuildings = buildings; // cachear para actualizaciones en tiempo real
     console.log('Edificios recibidos:', buildings.length);
     if (buildings.length > 0) {
       console.log('Ejemplo edificio:', JSON.stringify(buildings[0]).substring(0,200));
@@ -989,6 +1121,7 @@ async function calcRoute() {
     console.log(`Segmentos: ${totalSegs} total, ${shadeCount} en sombra`);
 
     drawRoute(segments);
+    drawBuildingShadows(buildings, sun);
 
     const shadePct = totalDist>0 ? Math.round(shadeDist/totalDist*100) : 0;
     document.getElementById('r-shade').textContent = shadePct+'%';
