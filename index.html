@@ -239,6 +239,7 @@ let ptA = null, ptB = null;          // [lon, lat] para Mapbox
 let mrkA = null, mrkB = null;
 let pickFor = null;
 let cachedBuildings = [];
+let cachedTrees = [];
 let allRoutes = [];
 let selectedIdx = 0;
 let opts = { sw: false, '3d': true, sh: true };
@@ -495,6 +496,71 @@ function decodePolyline(encoded, precision=6) {
 }
 
 // ══════════════════════════════════════════════════
+// ÁRBOLES OSM
+// ══════════════════════════════════════════════════
+async function fetchTrees(coords) {
+  const lons=coords.map(c=>c[0]), lats=coords.map(c=>c[1]);
+  const pad=0.003;
+  const bbox=`${Math.min(...lats)-pad},${Math.min(...lons)-pad},${Math.max(...lats)+pad},${Math.max(...lons)+pad}`;
+  // Árboles individuales + zonas arboladas (wood, forest, park)
+  const q=`[out:json][timeout:20];(
+    node["natural"="tree"](${bbox});
+    way["natural"~"^(wood|scrub)$"](${bbox});
+    way["landuse"~"^(forest|meadow|grass|park|village_green|recreation_ground)$"](${bbox});
+    way["leisure"~"^(park|garden|nature_reserve)$"](${bbox});
+  );out body;>;out skel qt;`;
+  for (const ep of ['https://overpass-api.de/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter']) {
+    try {
+      const r=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
+      if (!r.ok) continue;
+      const d=await r.json();
+      return parseTrees(d.elements||[]);
+    } catch(e) { console.warn('Trees Overpass:',e.message); }
+  }
+  return [];
+}
+
+function parseTrees(elements) {
+  const nodes={};
+  elements.filter(e=>e.type==='node').forEach(n=>nodes[n.id]=[n.lon,n.lat]);
+  const result=[];
+
+  // Árboles individuales → círculo de sombra según diámetro de copa
+  elements.filter(e=>e.type==='node'&&e.tags?.natural==='tree').forEach(n=>{
+    const crownD = parseFloat(n.tags?.diameter_crown||n.tags?.crown_diameter||0);
+    const radius = crownD>0 ? crownD/2 : 4; // default 4m de radio si no hay dato
+    const h = parseFloat(n.tags?.height||8); // altura media árbol urbano
+    result.push({ type:'tree', coords:circlePolygon(n.lon,n.lat,radius), h, radius, lon:n.lon, lat:n.lat });
+  });
+
+  // Zonas arboladas → polígonos
+  elements.filter(e=>e.type==='way'&&e.nodes).forEach(w=>{
+    const isGreen = w.tags?.natural==='wood'||w.tags?.natural==='scrub'||
+      ['forest','meadow','grass','park','village_green','recreation_ground'].includes(w.tags?.landuse)||
+      ['park','garden','nature_reserve'].includes(w.tags?.leisure);
+    if (!isGreen) return;
+    const coords=(w.nodes||[]).map(id=>nodes[id]).filter(Boolean);
+    if (coords.length<3) return;
+    const h=6; // altura media vegetación
+    result.push({ type:'green', coords, h, radius:0 });
+  });
+
+  return result;
+}
+
+// Generar polígono circular aproximado (n lados)
+function circlePolygon(lon, lat, radiusM, n=12) {
+  const pts=[];
+  const mLon=111000*Math.cos(lat*Math.PI/180), mLat=111000;
+  for (let i=0;i<n;i++) {
+    const a=i*2*Math.PI/n;
+    pts.push([lon+radiusM*Math.sin(a)/mLon, lat+radiusM*Math.cos(a)/mLat]);
+  }
+  pts.push(pts[0]);
+  return pts;
+}
+
+// ══════════════════════════════════════════════════
 // EDIFICIOS OSM
 // ══════════════════════════════════════════════════
 async function fetchBuildings(coords) {
@@ -661,10 +727,15 @@ function drawRoute(segs) {
 // ══════════════════════════════════════════════════
 function drawShadows(buildings, sun) {
   clearLayer('bld-shadows');
+  clearLayer('tree-shadows');
+  clearLayer('tree-points');
   if (!opts.sh || sun.el<=0 || sun.el>75) return;
-  const features=[];
+
   const azRad=sun.az*Math.PI/180;
-  for (const b of buildings) {
+  const bldFeatures=[], treeFeatures=[], treePoints=[];
+
+  const allObjs=[...buildings, ...cachedTrees];
+  for (const b of allObjs) {
     if (!b.coords||b.coords.length<3) continue;
     const refLat=b.coords[0][1];
     const shadowM=b.h/Math.tan(sun.el*Math.PI/180);
@@ -673,11 +744,29 @@ function drawShadows(buildings, sun) {
     const shifted=b.coords.map(([cx,cy])=>[cx+sdLon,cy+sdLat]);
     const hull=convexHull([...b.coords,...shifted]);
     if (hull.length<3) continue;
-    features.push({type:'Feature',geometry:{type:'Polygon',coordinates:[[...hull,hull[0]]]}});
+    const feat={type:'Feature',geometry:{type:'Polygon',coordinates:[[...hull,hull[0]]]}};
+    if (b.type==='tree') treeFeatures.push(feat);
+    else if (b.type==='green') treeFeatures.push(feat);
+    else bldFeatures.push(feat);
   }
-  if (!features.length) return;
-  map.addSource('bld-shadows',{type:'geojson',data:{type:'FeatureCollection',features}});
-  map.addLayer({id:'bld-shadows',type:'fill',source:'bld-shadows',paint:{'fill-color':'#000','fill-opacity':0.38}},'3d-buildings');
+
+  // Puntos de árboles individuales
+  cachedTrees.filter(t=>t.type==='tree').forEach(t=>{
+    treePoints.push({type:'Feature',geometry:{type:'Point',coordinates:[t.lon,t.lat]},properties:{r:t.radius}});
+  });
+
+  if (bldFeatures.length) {
+    map.addSource('bld-shadows',{type:'geojson',data:{type:'FeatureCollection',features:bldFeatures}});
+    map.addLayer({id:'bld-shadows',type:'fill',source:'bld-shadows',paint:{'fill-color':'#000','fill-opacity':0.35}},'3d-buildings');
+  }
+  if (treeFeatures.length) {
+    map.addSource('tree-shadows',{type:'geojson',data:{type:'FeatureCollection',features:treeFeatures}});
+    map.addLayer({id:'tree-shadows',type:'fill',source:'tree-shadows',paint:{'fill-color':'#1a3a1a','fill-opacity':0.45}});
+  }
+  if (treePoints.length) {
+    map.addSource('tree-points',{type:'geojson',data:{type:'FeatureCollection',features:treePoints}});
+    map.addLayer({id:'tree-points',type:'circle',source:'tree-points',paint:{'circle-color':'#22c55e','circle-radius':5,'circle-opacity':0.7,'circle-stroke-color':'#166534','circle-stroke-width':1}});
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -737,6 +826,7 @@ function applyRoute(i) {
     <span class="tag"><b>☀</b> El=${sun.el.toFixed(0)}° ${dir}</span>
     <span class="tag"><b>🏛</b> ${cachedBuildings.length} edif.</span>
     <span class="tag"><b>🚶</b> ${Math.round(totalDist/1000/4.5*60)}min</span>
+    <span class="tag"><b>🌳</b> ${cachedTrees.filter(t=>t.type==='tree').length} árboles</span>
     <span class="tag">↔ ${opts.sw?'Acera óptima':'Calzada central'}</span>`;
 
   // Tramos
@@ -811,12 +901,16 @@ async function calcRoute() {
     setStatus('Calculando ruta directa…', true);
     const r1 = await fetchRoute(ptA, ptB);
 
-    // 2. Edificios
-    setStatus('Descargando edificios OSM…', true);
-    const buildings = await fetchBuildings(r1.coords);
+    // 2. Edificios + árboles en paralelo
+    setStatus('Descargando edificios y árboles OSM…', true);
+    const [buildings, trees] = await Promise.all([
+      fetchBuildings(r1.coords),
+      fetchTrees(r1.coords)
+    ]);
     cachedBuildings = buildings;
+    cachedTrees = trees;
     const sun = getSun();
-    setStatus(`${buildings.length} edificios · calculando sombras…`, true);
+    setStatus(`${buildings.length} edif. · ${trees.length} elementos vegetación · calculando…`, true);
 
     // 3. Rutas alternativas con waypoints a ±120m perpendiculares al trayecto
     const wp1 = midpointOffset(ptA, ptB,  120);
@@ -830,18 +924,19 @@ async function calcRoute() {
     // 4. Analizar sombras de cada ruta
     const routes = [];
 
-    const a1 = analyzeRoute(r1.coords, buildings, sun);
+    const allObstacles = [...buildings, ...trees];
+    const a1 = analyzeRoute(r1.coords, allObstacles, sun);
     routes.push({ coords:r1.coords, analysis:a1, label:'Ruta directa', badgeClass:'rb-f' });
 
     if (res2.status==='fulfilled') {
-      const a2 = analyzeRoute(res2.value.coords, buildings, sun);
+      const a2 = analyzeRoute(res2.value.coords, allObstacles, sun);
       // Solo añadir si coords son distintas de r1
       if (res2.value.coords.length !== r1.coords.length || a2.shadePct !== a1.shadePct) {
         routes.push({ coords:res2.value.coords, analysis:a2, label:'Alternativa A', badgeClass:'rb-b' });
       }
     }
     if (res3.status==='fulfilled') {
-      const a3 = analyzeRoute(res3.value.coords, buildings, sun);
+      const a3 = analyzeRoute(res3.value.coords, allObstacles, sun);
       if (res3.value.coords.length !== r1.coords.length || a3.shadePct !== a1.shadePct) {
         routes.push({ coords:res3.value.coords, analysis:a3, label:'Alternativa B', badgeClass:'rb-b' });
       }
@@ -861,7 +956,8 @@ async function calcRoute() {
     renderCards(routes);
     applyRoute(0);
     setBtnLoading(false);
-    setStatus(`${routes.length} ruta${routes.length>1?'s':''} · mejor: ${routes[0].analysis.shadePct}% en sombra`, false);
+    const nTrees=trees.filter(t=>t.type==='tree').length;
+    setStatus(`${routes.length} rutas · ${buildings.length} edif. · ${nTrees} árboles · mejor: ${routes[0].analysis.shadePct}% sombra`, false);
 
   } catch(e) {
     setBtnLoading(false);
