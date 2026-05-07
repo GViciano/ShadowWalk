@@ -964,9 +964,15 @@ async function calcRoute() {
 
     setStatus('Descargando edificios OSM…', true);
     const buildings = await getBuildings(coords);
+    console.log('Edificios recibidos:', buildings.length);
+    if (buildings.length > 0) {
+      console.log('Ejemplo edificio:', JSON.stringify(buildings[0]).substring(0,200));
+      console.log('¿Tiene coords?', buildings[0].coords?.length, 'altura:', buildings[0].h);
+    }
+    console.log('Sol — elevación:', sun.el.toFixed(1), 'azimut:', sun.az.toFixed(1));
     setStatus(`Analizando sombras (${buildings.length} edificios)…`, true);
 
-    let totalDist=0, shadeDist=0;
+    let totalDist=0, shadeDist=0, shadeCount=0, totalSegs=0;
     const segments = [];
     for (let i=0; i<coords.length-1; i++) {
       const a=coords[i], b=coords[i+1];
@@ -974,10 +980,13 @@ async function calcRoute() {
       const dlat=(b[1]-a[1])*111000, dlon=(b[0]-a[0])*111000*Math.cos(a[1]*Math.PI/180);
       const dist=Math.hypot(dlat,dlon);
       const shade=isInShadow(mid,sun,buildings);
+      if(shade) shadeCount++;
+      totalSegs++;
       segments.push({a,b,mid,dist,shade});
       totalDist+=dist;
       if(shade) shadeDist+=dist;
     }
+    console.log(`Segmentos: ${totalSegs} total, ${shadeCount} en sombra`);
 
     drawRoute(segments);
 
