@@ -784,41 +784,126 @@ async function getBuildings(coords) {
   const lons = coords.map(c=>c[0]), lats = coords.map(c=>c[1]);
   const pad = 0.003;
   const bbox = `${Math.min(...lats)-pad},${Math.min(...lons)-pad},${Math.max(...lats)+pad},${Math.max(...lons)+pad}`;
-  const q = `[out:json][timeout:20];(way["building"](${bbox}););out center tags;`;
+  const q = `[out:json][timeout:25];(way["building"](${bbox}););out body;>;out skel qt;`;
   const eps = ['https://overpass-api.de/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   for (const ep of eps) {
     try {
       const r = await fetch(ep, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'data='+encodeURIComponent(q)});
       if (!r.ok) continue;
       const d = await r.json();
-      return d.elements || [];
+      return parseBuildings(d.elements || []);
     } catch(e) { console.warn(ep, e.message); }
   }
   return [];
 }
 
+// Reconstruir polígonos reales a partir de ways + nodes
+function parseBuildings(elements) {
+  const nodes = {};
+  elements.filter(e=>e.type==='node').forEach(n => nodes[n.id] = [n.lon, n.lat]);
+  return elements
+    .filter(e => e.type==='way' && e.tags?.building)
+    .map(w => {
+      const coords = (w.nodes||[]).map(id=>nodes[id]).filter(Boolean);
+      if (coords.length < 3) return null;
+      const h = parseFloat(w.tags?.height) || (parseFloat(w.tags?.['building:levels'])||3) * 3;
+      return { coords, h, tags: w.tags };
+    })
+    .filter(Boolean);
+}
+
 // ════════════════════════════════════════════════════
-// SOMBRA
+// SOMBRA — Geometría real de polígonos
 // ════════════════════════════════════════════════════
-function isInShadow(point, sun, buildings) {
-  if (sun.el <= 0) return true;
-  if (sun.el > 72) return false;
-  const [lon, lat] = point;
+
+// ¿Un punto [x,y] está dentro de un polígono? (Ray casting)
+function pointInPolygon(px, py, poly) {
+  let inside = false;
+  for (let i=0, j=poly.length-1; i<poly.length; j=i++) {
+    const [xi,yi] = poly[i], [xj,yj] = poly[j];
+    if (((yi>py) !== (yj>py)) && (px < (xj-xi)*(py-yi)/(yj-yi)+xi)) inside = !inside;
+  }
+  return inside;
+}
+
+// Proyectar el polígono de un edificio como sombra en el suelo
+// dado azimut y elevación solar y altura del edificio
+function projectShadow(coords, h, sun) {
+  if (sun.el <= 0) return null;
   const azRad = sun.az * Math.PI/180;
-  const sdx = -Math.sin(azRad), sdy = -Math.cos(azRad);
-  for (const b of buildings) {
-    const bLat = b.lat||b.center?.lat, bLon = b.lon||b.center?.lon;
-    if (!bLat||!bLon) continue;
-    const h = parseFloat(b.tags?.height)||(parseFloat(b.tags?.['building:levels'])||3)*3;
-    const shadowLen = (h/Math.tan(sun.el*Math.PI/180))/111000;
-    const dx = lon-bLon, dy = lat-bLat;
-    const dist = Math.hypot(dx*111000*Math.cos(lat*Math.PI/180), dy*111000);
-    if (dist > shadowLen+15) continue;
-    const dot = (dx/Math.max(dist/111000,0.000001))*sdx + (dy/Math.max(dist/111000,0.000001))*sdy;
-    if (dot > 0.35 && dist < shadowLen) {
-      const cx = Math.abs((dx/111000)*sdy-(dy/111000)*sdx);
-      if (cx < 0.00018) return true;
+  // Vector de sombra: dirección opuesta al sol, longitud = h/tan(el)
+  const shadowLen = h / Math.tan(sun.el * Math.PI/180);
+  // En grados: 1 grado lat ≈ 111000m, 1 grado lon ≈ 111000*cos(lat)m
+  const refLat = coords[0][1];
+  const mPerDegLat = 111000;
+  const mPerDegLon = 111000 * Math.cos(refLat * Math.PI/180);
+  // Desplazamiento de sombra en grados
+  const dLon = (shadowLen * Math.sin(azRad)) / mPerDegLon;  // hacia donde va la sombra
+  const dLat = (shadowLen * Math.cos(azRad)) / mPerDegLat;
+  // La sombra va en dirección OPUESTA al sol
+  const sdLon = -dLon, sdLat = -dLat;
+  // Polígono de sombra = unión del polígono original + polígono desplazado
+  // Aproximación: usar el convex hull del edificio + desplazado
+  const shifted = coords.map(([lon,lat]) => [lon+sdLon, lat+sdLat]);
+  return { original: coords, shifted, sdLon, sdLat };
+}
+
+// ¿El punto está en la sombra proyectada por el edificio?
+function pointInShadow(px, py, shadow) {
+  // Comprobar si está en el polígono desplazado (sombra pura)
+  if (pointInPolygon(px, py, shadow.shifted)) return true;
+  // Comprobar si está en el polígono intermedio (barrido de sombra)
+  // Construir el polígono de barrido uniendo original + shifted
+  const sweep = buildSweepPolygon(shadow.original, shadow.shifted);
+  return pointInPolygon(px, py, sweep);
+}
+
+// Construir polígono de barrido entre original y desplazado
+function buildSweepPolygon(orig, shift) {
+  // Tomar los vértices del convex hull de ambos polígonos
+  const all = [...orig, ...shift];
+  return convexHull(all);
+}
+
+// Convex hull — Gift wrapping
+function convexHull(points) {
+  if (points.length < 3) return points;
+  let start = points.reduce((a,b) => b[0]<a[0]?b:a);
+  const hull = [start];
+  let current = start;
+  let iterations = 0;
+  do {
+    let next = points[0];
+    for (const p of points) {
+      if (p === current) continue;
+      const cross = (next[0]-current[0])*(p[1]-current[1]) - (next[1]-current[1])*(p[0]-current[0]);
+      if (next === current || cross < 0) next = p;
     }
+    current = next;
+    hull.push(next);
+    if (++iterations > 50) break;
+  } while (current !== start);
+  return hull;
+}
+
+function isInShadow(point, sun, buildings) {
+  if (sun.el <= 0) return true;   // noche
+  if (sun.el > 75) return false;  // sol en cénit, sombras mínimas
+
+  const [lon, lat] = point;
+
+  for (const b of buildings) {
+    if (!b.coords || b.coords.length < 3) continue;
+
+    // Primero: ¿el punto está dentro del propio edificio? (dentro = sombra)
+    if (pointInPolygon(lon, lat, b.coords)) return true;
+
+    // Proyectar sombra del edificio
+    const shadow = projectShadow(b.coords, b.h, sun);
+    if (!shadow) continue;
+
+    // Comprobar si el punto está en la zona de sombra
+    if (pointInShadow(lon, lat, shadow)) return true;
   }
   return false;
 }
