@@ -481,17 +481,23 @@ function initMap() {
   mapgl = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/dark-v11',
-    center: [cityCenter[1], cityCenter[0]],
+    center: [cityCenter[1], cityCenter[0]], // [lon, lat]
     zoom: 15,
     pitch: 50,
     bearing: -10,
     antialias: true
   });
 
+  mapgl.on('error', (e) => {
+    console.error('Mapbox error:', e.error);
+    setStatus('Error Mapbox: ' + (e.error?.message || e.error), false);
+  });
+
   mapgl.addControl(new mapboxgl.NavigationControl(), 'top-right');
   mapgl.addControl(new mapboxgl.GeolocateControl({ positionOptions:{enableHighAccuracy:true}, trackUserLocation:false }), 'top-right');
 
   mapgl.on('load', () => {
+    console.log('Mapbox map loaded OK');
     addBuildings3D();
     addShadowLayer();
     setStatus('Listo — busca una ciudad o marca puntos en el mapa');
@@ -646,10 +652,16 @@ document.getElementById('city-input').addEventListener('input', function() {
         div.className = 'city-sugg';
         div.innerHTML = `<strong>${parts[0]}</strong><br><span>${parts.slice(1,3).join(',')}</span>`;
         div.onclick = () => {
-          cityCenter = [parseFloat(it.lat), parseFloat(it.lon)];
+          const lat = parseFloat(it.lat), lon = parseFloat(it.lon);
+          cityCenter = [lat, lon];
           document.getElementById('city-input').value = parts[0];
           sugg.style.display = 'none';
-          if (mapgl) mapgl.flyTo({center:[cityCenter[1],cityCenter[0]], zoom:14, pitch:50, duration:1200});
+          if (mapgl) {
+            mapgl.flyTo({center:[lon, lat], zoom:15, pitch:50, duration:1200});
+            console.log('Flying to:', lon, lat, parts[0]);
+          } else {
+            console.warn('mapgl not ready');
+          }
           updateClock();
         };
         sugg.appendChild(div);
