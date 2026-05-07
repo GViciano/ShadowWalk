@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Ruta en Sombra 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/mapbox-gl@3.3.0/dist/mapbox-gl.css" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --panel: #111118;
+  --card: #18181f;
+  --border: rgba(255,255,255,0.06);
+  --border2: rgba(255,255,255,0.12);
+  --text: #f0eee8;
+  --muted: #6b6a72;
+  --accent: #7c6af7;
+  --accent2: #f7a26a;
+  --green: #4ade80;
+  --yellow: #fbbf24;
+  --red: #f87171;
+  --mono: 'DM Mono', monospace;
+  --sans: 'Instrument Sans', sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:var(--sans); }
+
+#map { position:fixed; inset:0; width:100%; height:100%; }
+
+/* ── PANEL FLOTANTE ── */
+#panel {
+  position:fixed; top:16px; left:16px; bottom:16px;
+  width:340px;
+  background: rgba(17,17,24,0.92);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid var(--border2);
+  border-radius: 16px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 0.5px rgba(255,255,255,0.04);
+  z-index: 100;
+}
+
+/* Header */
+#header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.logo-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.logo {
+  font-family: var(--mono); font-size:10px; letter-spacing:2px;
+  text-transform:uppercase; color:var(--accent);
+}
+.sun-clock {
+  font-family: var(--mono); font-size:11px; color:var(--yellow);
+  background: rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.2);
+  border-radius:6px; padding:3px 8px;
+}
+.title { font-size:20px; font-weight:700; letter-spacing:-0.4px; line-height:1.1; }
+.title .grad {
+  background: linear-gradient(135deg, #7c6af7, #f7a26a);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.subtitle { font-size:11px; color:var(--muted); margin-top:4px; font-weight:400; }
+
+/* Ciudad search */
+#city-bar {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink:0;
+  position:relative;
+}
+.city-label { font-family:var(--mono); font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:5px; }
+.city-wrap { position:relative; }
+.city-input {
+  width:100%; padding:9px 36px 9px 12px;
+  background: var(--card); border:1px solid var(--border2);
+  border-radius:9px; font-family:var(--sans); font-size:13px; color:var(--text);
+  outline:none; transition:border-color .2s;
+}
+.city-input:focus { border-color:var(--accent); }
+.city-input::placeholder { color:var(--muted); }
+.city-icon { position:absolute; right:10px; top:50%; transform:translateY(-50%); font-size:15px; pointer-events:none; }
+.city-suggestions {
+  position:absolute; top:calc(100% + 4px); left:0; right:0;
+  background:var(--card); border:1px solid var(--border2); border-radius:10px;
+  overflow:hidden; z-index:200; display:none;
+  box-shadow:0 12px 40px rgba(0,0,0,0.5);
+}
+.city-sugg {
+  padding:10px 13px; font-size:12px; cursor:pointer;
+  border-bottom:1px solid var(--border); transition:background .1s;
+  line-height:1.4;
+}
+.city-sugg:last-child { border-bottom:none; }
+.city-sugg:hover { background:rgba(124,106,247,0.1); }
+.city-sugg strong { color:var(--text); }
+.city-sugg span { color:var(--muted); font-size:11px; }
+
+/* Inputs A/B */
+#inputs {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink:0;
+}
+.input-row { display:flex; gap:8px; align-items:flex-start; margin-bottom:8px; }
+.input-row:last-child { margin-bottom:0; }
+.pin-badge {
+  width:26px; height:26px; border-radius:8px; flex-shrink:0; margin-top:1px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; font-weight:700; font-family:var(--mono);
+}
+.pin-badge.a { background:rgba(124,106,247,0.2); color:var(--accent); border:1px solid rgba(124,106,247,0.3); }
+.pin-badge.b { background:rgba(247,162,106,0.2); color:var(--accent2); border:1px solid rgba(247,162,106,0.3); }
+.addr-wrap { flex:1; position:relative; }
+.addr-input {
+  width:100%; padding:8px 30px 8px 10px;
+  background:var(--card); border:1px solid var(--border2);
+  border-radius:8px; font-family:var(--sans); font-size:12px; color:var(--text);
+  outline:none; transition:border-color .2s;
+}
+.addr-input:focus { border-color:var(--accent); }
+.addr-input::placeholder { color:var(--muted); }
+.addr-pin-btn {
+  position:absolute; right:6px; top:50%; transform:translateY(-50%);
+  background:none; border:none; cursor:pointer; color:var(--muted);
+  font-size:13px; padding:2px; transition:color .15s;
+}
+.addr-pin-btn:hover { color:var(--text); }
+.addr-suggestions {
+  position:absolute; top:calc(100% + 3px); left:0; right:0; z-index:200;
+  background:var(--card); border:1px solid var(--border2); border-radius:9px;
+  overflow:hidden; display:none; box-shadow:0 12px 40px rgba(0,0,0,0.5);
+}
+.addr-sugg {
+  padding:8px 11px; font-size:11px; cursor:pointer;
+  border-bottom:1px solid var(--border); transition:background .1s; line-height:1.4;
+}
+.addr-sugg:last-child { border-bottom:none; }
+.addr-sugg:hover { background:rgba(124,106,247,0.1); }
+.addr-hint { font-size:10px; color:var(--muted); margin-top:3px; padding-left:2px; }
+
+/* Datetime */
+#datetime {
+  padding:10px 16px;
+  border-bottom:1px solid var(--border);
+  display:flex; gap:8px; flex-shrink:0;
+}
+.dt-col { flex:1; }
+.dt-lbl { font-family:var(--mono); font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+.dt-input {
+  width:100%; padding:7px 8px;
+  background:var(--card); border:1px solid var(--border2);
+  border-radius:8px; font-family:var(--sans); font-size:12px; color:var(--text);
+  outline:none; color-scheme:dark;
+}
+.dt-input:focus { border-color:var(--accent); }
+
+/* Botón calcular */
+#calc-btn {
+  margin:12px 16px 0;
+  padding:12px; width:calc(100% - 32px);
+  background:linear-gradient(135deg, #7c6af7, #9b86f8);
+  color:#fff; border:none; border-radius:10px;
+  font-family:var(--sans); font-size:13px; font-weight:600;
+  cursor:pointer; transition:all .2s; letter-spacing:0.2px;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  flex-shrink:0;
+}
+#calc-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 8px 24px rgba(124,106,247,0.4); }
+#calc-btn:active { transform:translateY(0); }
+#calc-btn:disabled { opacity:0.4; cursor:not-allowed; transform:none; box-shadow:none; }
+#calc-btn .sp { width:13px; height:13px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; display:none; }
+
+/* Toggle 3D */
+#toggle-row {
+  margin:10px 16px 0;
+  display:flex; gap:6px; flex-shrink:0;
+}
+.toggle-btn {
+  flex:1; padding:7px 6px; border-radius:8px;
+  border:1px solid var(--border2); background:transparent;
+  color:var(--muted); font-family:var(--sans); font-size:11px;
+  cursor:pointer; transition:all .15s; text-align:center;
+}
+.toggle-btn.on { background:rgba(124,106,247,0.15); border-color:rgba(124,106,247,0.4); color:var(--accent); }
+.toggle-btn:hover:not(.on) { background:var(--card); color:var(--text); }
+
+/* Results */
+#results {
+  flex:1; overflow-y:auto; padding:12px 16px 16px; margin-top:10px;
+}
+#results::-webkit-scrollbar { width:3px; }
+#results::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+
+#empty-state { text-align:center; padding:20px 8px; color:var(--muted); }
+.empty-icon { font-size:36px; margin-bottom:10px; }
+.empty-txt { font-size:12px; line-height:1.7; }
+
+/* Summary card */
+#summary { display:none; }
+.sum-header { font-family:var(--mono); font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
+
+.metrics { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:12px; }
+.metric {
+  background:var(--card); border:1px solid var(--border); border-radius:9px;
+  padding:9px 8px; text-align:center;
+}
+.metric .mv { font-family:var(--mono); font-size:18px; font-weight:500; margin-bottom:2px; }
+.metric .ml { font-size:10px; color:var(--muted); }
+.metric.shade .mv { color:var(--green); }
+.metric.sun .mv { color:var(--yellow); }
+.metric.dist .mv { color:var(--accent); }
+
+/* Barra sombra/sol */
+.shade-bar {
+  height:6px; border-radius:3px; overflow:hidden;
+  background:linear-gradient(90deg, rgba(251,191,36,0.3), rgba(251,191,36,0.3));
+  margin-bottom:12px; border:1px solid var(--border);
+}
+.shade-fill { height:100%; background:linear-gradient(90deg,#4ade80,#22c55e); border-radius:3px; transition:width .8s ease; }
+
+/* Sol info tags */
+.tags { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:12px; }
+.tag {
+  background:var(--card); border:1px solid var(--border2);
+  border-radius:6px; padding:3px 8px; font-size:10px; color:var(--muted);
+  font-family:var(--mono);
+}
+.tag b { color:var(--text); }
+
+/* Tramos */
+.segs-header { font-family:var(--mono); font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:7px; }
+.seg {
+  display:flex; align-items:center; gap:9px;
+  padding:6px 8px; border-radius:8px; margin-bottom:3px;
+  cursor:pointer; transition:background .1s; border:1px solid transparent;
+}
+.seg:hover { background:var(--card); border-color:var(--border); }
+.seg-color { width:3px; height:28px; border-radius:2px; flex-shrink:0; }
+.seg-info { flex:1; min-width:0; }
+.seg-type { font-size:11px; font-weight:600; }
+.seg-dist { font-size:10px; color:var(--muted); font-family:var(--mono); }
+.seg-pct { font-family:var(--mono); font-size:12px; font-weight:500; }
+
+/* Status bar */
+#statusbar {
+  padding:8px 16px; border-top:1px solid var(--border);
+  font-size:10px; color:var(--muted); display:flex; align-items:center; gap:6px;
+  font-family:var(--mono); flex-shrink:0;
+}
+.spin-xs { width:9px; height:9px; border:1.5px solid var(--border2); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; display:none; }
+
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Mapbox overrides */
+.mapboxgl-ctrl-group { background:rgba(17,17,24,0.9)!important; border:1px solid var(--border2)!important; border-radius:10px!important; backdrop-filter:blur(10px); }
+.mapboxgl-ctrl-group button { color:var(--text)!important; }
+.mapboxgl-ctrl-group button:hover { background:rgba(124,106,247,0.15)!important; }
+.mapboxgl-ctrl-attrib { display:none!important; }
+.mapboxgl-popup-content {
+  background:rgba(17,17,24,0.95)!important; border:1px solid var(--border2)!important;
+  border-radius:10px!important; color:var(--text)!important; padding:10px 13px!important;
+  font-family:var(--sans)!important; font-size:12px!important;
+  box-shadow:0 8px 32px rgba(0,0,0,0.5)!important;
+  backdrop-filter:blur(10px);
+}
+.mapboxgl-popup-tip { display:none!important; }
+.mapboxgl-popup-close-button { color:var(--muted)!important; font-size:16px!important; }
+
+/* Pick banner */
+#pick-banner {
+  position:fixed; top:16px; left:50%; transform:translateX(-50%);
+  background:rgba(17,17,24,0.95); border:1px solid var(--accent);
+  color:var(--accent); padding:9px 20px; border-radius:20px;
+  font-size:12px; font-weight:600; z-index:200;
+  display:none; letter-spacing:0.3px;
+  box-shadow:0 4px 20px rgba(124,106,247,0.3);
+  pointer-events:none; backdrop-filter:blur(10px);
+  font-family:var(--sans);
+}
+
+/* API key modal */
+#key-modal {
+  position:fixed; inset:0; background:rgba(0,0,0,0.8);
+  display:flex; align-items:center; justify-content:center; z-index:999;
+  backdrop-filter:blur(8px);
+}
+#key-box {
+  background:var(--panel); border:1px solid var(--border2); border-radius:16px;
+  padding:28px; width:460px; max-width:calc(100vw - 32px);
+  box-shadow:0 32px 80px rgba(0,0,0,0.7);
+}
+.key-title { font-size:18px; font-weight:700; margin-bottom:6px; letter-spacing:-0.3px; }
+.key-title .g { background:linear-gradient(135deg,#7c6af7,#f7a26a); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.key-sub { font-size:12px; color:var(--muted); margin-bottom:20px; line-height:1.6; }
+.key-steps { margin-bottom:18px; }
+.key-step {
+  display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;
+  font-size:12px; line-height:1.5;
+}
+.step-num {
+  width:20px; height:20px; border-radius:50%; background:rgba(124,106,247,0.2);
+  border:1px solid rgba(124,106,247,0.3); color:var(--accent);
+  display:flex; align-items:center; justify-content:center; font-size:10px;
+  font-weight:700; flex-shrink:0; margin-top:1px;
+}
+.key-link { color:var(--accent); text-decoration:none; }
+.key-link:hover { text-decoration:underline; }
+.key-input-wrap { margin-bottom:14px; }
+.key-lbl { font-family:var(--mono); font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:5px; }
+.key-input {
+  width:100%; padding:10px 13px; background:var(--card); border:1px solid var(--border2);
+  border-radius:9px; font-family:var(--mono); font-size:12px; color:var(--text); outline:none;
+  transition:border-color .2s;
+}
+.key-input:focus { border-color:var(--accent); }
+.key-input::placeholder { color:var(--muted); }
+.key-btn {
+  width:100%; padding:12px; background:linear-gradient(135deg,#7c6af7,#9b86f8);
+  color:#fff; border:none; border-radius:9px; font-family:var(--sans);
+  font-size:13px; font-weight:600; cursor:pointer; transition:all .2s;
+}
+.key-btn:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(124,106,247,0.4); }
+.key-note { font-size:10px; color:var(--muted); text-align:center; margin-top:10px; line-height:1.5; }
+</style>
+</head>
+<body>
+
+<!-- API Key Modal -->
+<div id="key-modal">
+  <div id="key-box">
+    <div class="key-title">Configura tu <span class="g">Mapbox API Key</span></div>
+    <div class="key-sub">Necesitas una clave gratuita de Mapbox para los edificios 3D y el mapa moderno.<br>Tarda menos de 2 minutos.</div>
+    <div class="key-steps">
+      <div class="key-step"><div class="step-num">1</div><div>Ve a <a class="key-link" href="https://account.mapbox.com/auth/signup/" target="_blank">account.mapbox.com</a> y crea una cuenta gratuita</div></div>
+      <div class="key-step"><div class="step-num">2</div><div>En tu dashboard verás tu <strong>Default public token</strong> (empieza por <code style="color:var(--accent)">pk.</code>)</div></div>
+      <div class="key-step"><div class="step-num">3</div><div>Cópialo y pégalo aquí abajo</div></div>
+    </div>
+    <div class="key-input-wrap">
+      <div class="key-lbl">Mapbox Public Token</div>
+      <input class="key-input" id="key-input" type="text" placeholder="pk.eyJ1IjoiusuarioXXX…"/>
+    </div>
+    <button class="key-btn" onclick="initWithKey()">Iniciar aplicación →</button>
+    <div class="key-note">La clave se guarda solo en tu navegador (localStorage).<br>Plan gratuito: 50.000 cargas de mapa/mes.</div>
+  </div>
+</div>
+
+<!-- Pick banner -->
+<div id="pick-banner"></div>
+
+<!-- Mapa (se inicia después) -->
+<div id="map"></div>
+
+<!-- Panel -->
+<div id="panel">
+  <div id="header">
+    <div class="logo-row">
+      <div class="logo">Shadow Route</div>
+      <div class="sun-clock" id="sun-clock">☀ 12:00</div>
+    </div>
+    <div class="title">Camina en <span class="grad">sombra</span></div>
+    <div class="subtitle">Ruta a pie con máxima cobertura solar · cualquier ciudad</div>
+  </div>
+
+  <div id="city-bar">
+    <div class="city-label">Ciudad</div>
+    <div class="city-wrap">
+      <input class="city-input" id="city-input" type="text" placeholder="Busca cualquier ciudad…" autocomplete="off"/>
+      <div class="city-icon">🌍</div>
+    </div>
+    <div class="city-suggestions" id="city-suggs"></div>
+  </div>
+
+  <div id="inputs">
+    <div class="input-row">
+      <div class="pin-badge a">A</div>
+      <div class="addr-wrap">
+        <input class="addr-input" id="addr-a" type="text" placeholder="Origen…" autocomplete="off"/>
+        <button class="addr-pin-btn" onclick="startPick('a')" title="Marcar en mapa">⊕</button>
+        <div class="addr-suggestions" id="sugg-a"></div>
+      </div>
+    </div>
+    <div class="input-row">
+      <div class="pin-badge b">B</div>
+      <div class="addr-wrap">
+        <input class="addr-input" id="addr-b" type="text" placeholder="Destino…" autocomplete="off"/>
+        <button class="addr-pin-btn" onclick="startPick('b')" title="Marcar en mapa">⊕</button>
+        <div class="addr-suggestions" id="sugg-b"></div>
+      </div>
+    </div>
+    <div class="addr-hint">Escribe una dirección o ⊕ para marcar en el mapa</div>
+  </div>
+
+  <div id="datetime">
+    <div class="dt-col"><div class="dt-lbl">Fecha</div><input class="dt-input" type="date" id="dt-date"/></div>
+    <div class="dt-col"><div class="dt-lbl">Hora</div><input class="dt-input" type="time" id="dt-time" value="12:00"/></div>
+  </div>
+
+  <button id="calc-btn" onclick="calcRoute()" disabled>
+    <div class="sp" id="btn-sp"></div>
+    <span id="btn-txt">Selecciona origen y destino</span>
+  </button>
+
+  <div id="toggle-row">
+    <button class="toggle-btn on" id="t-3d" onclick="toggle3D()">🏙 Edificios 3D</button>
+    <button class="toggle-btn on" id="t-shad" onclick="toggleShadows()">☀ Sombras</button>
+    <button class="toggle-btn" id="t-tilt" onclick="toggleTilt()">↗ Vista aérea</button>
+  </div>
+
+  <div id="results">
+    <div id="empty-state">
+      <div class="empty-icon">🗺️</div>
+      <div class="empty-txt">Busca una ciudad, marca origen<br>y destino para calcular la ruta<br>con más sombra.</div>
+    </div>
+    <div id="summary">
+      <div class="sum-header">Resumen</div>
+      <div class="metrics">
+        <div class="metric shade"><div class="mv" id="r-shade">—</div><div class="ml">Sombra</div></div>
+        <div class="metric sun"><div class="mv" id="r-sun">—</div><div class="ml">Sol</div></div>
+        <div class="metric dist"><div class="mv" id="r-dist">—</div><div class="ml">Distancia</div></div>
+      </div>
+      <div class="shade-bar"><div class="shade-fill" id="shade-fill" style="width:0%"></div></div>
+      <div class="tags" id="sol-tags"></div>
+      <div class="segs-header">Tramos</div>
+      <div id="seg-list"></div>
+    </div>
+  </div>
+
+  <div id="statusbar">
+    <div class="spin-xs" id="spin-xs"></div>
+    <span id="status-txt">Iniciando…</span>
+  </div>
+</div>
+
+<script>
+// Cargar Mapbox GL dinámicamente y arrancar cuando esté listo
+function loadMapbox(cb) {
+  if (typeof mapboxgl !== 'undefined') { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/mapbox-gl@3.3.0/dist/mapbox-gl.js';
+  s.onload = cb;
+  s.onerror = () => {
+    document.getElementById('status-txt').textContent = 'Error: no se pudo cargar Mapbox GL JS';
+    console.error('Mapbox GL JS failed to load');
+  };
+  document.head.appendChild(s);
+}
+</script>
+<script>
+// ════════════════════════════════════════════════════
+// MAPBOX KEY
+// ════════════════════════════════════════════════════
+const MAPBOX_KEY = 'pk.eyJ1IjoiZ3ZpY2lhbm8iLCJhIjoiY21vdnlvcHQzMDBoNjJxczRxNzJiZzJjOCJ9.eqhIXGpKBEqD2HVAL_Ir0Q';
+let mbKey = localStorage.getItem('mb_key') || MAPBOX_KEY;
+let mapgl = null;
+
+function initWithKey() {
+  const k = document.getElementById('key-input').value.trim();
+  if (!k.startsWith('pk.')) { alert('El token debe empezar por pk.'); return; }
+  localStorage.setItem('mb_key', k);
+  mbKey = k;
+  document.getElementById('key-modal').style.display = 'none';
+  initMap();
+}
+
+// Key precargada — saltar modal siempre
+document.getElementById('key-modal').style.display = 'none';
+
+// ════════════════════════════════════════════════════
+// INIT MAPA
+// ════════════════════════════════════════════════════
+let cityCenter = [39.9864, -0.0513]; // [lat, lon]
+
+function initMap() {
+  mapboxgl.accessToken = mbKey;
+  mapgl = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/dark-v11',
+    center: [cityCenter[1], cityCenter[0]],
+    zoom: 15,
+    pitch: 50,
+    bearing: -10,
+    antialias: true
+  });
+
+  mapgl.addControl(new mapboxgl.NavigationControl(), 'top-right');
+  mapgl.addControl(new mapboxgl.GeolocateControl({ positionOptions:{enableHighAccuracy:true}, trackUserLocation:false }), 'top-right');
+
+  mapgl.on('load', () => {
+    addBuildings3D();
+    addShadowLayer();
+    setStatus('Listo — busca una ciudad o marca puntos en el mapa');
+  });
+
+  mapgl.on('click', onMapClick);
+}
+
+// ════════════════════════════════════════════════════
+// EDIFICIOS 3D
+// ════════════════════════════════════════════════════
+let show3D = true, showShadows = true;
+
+function addBuildings3D() {
+  if (!mapgl.getLayer('3d-buildings')) {
+    mapgl.addLayer({
+      id: '3d-buildings',
+      source: 'composite',
+      'source-layer': 'building',
+      filter: ['==', 'extrude', 'true'],
+      type: 'fill-extrusion',
+      minzoom: 13,
+      paint: {
+        'fill-extrusion-color': [
+          'interpolate', ['linear'], ['get', 'height'],
+          0, '#1a1a2e', 20, '#16213e', 50, '#0f3460', 100, '#533483'
+        ],
+        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 13, 0, 13.5, ['get', 'height']],
+        'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 13, 0, 13.5, ['get', 'min_height']],
+        'fill-extrusion-opacity': 0.85,
+        'fill-extrusion-ambient-occlusion-intensity': 0.5,
+      }
+    });
+  }
+}
+
+function addShadowLayer() {
+  updateSunLight();
+}
+
+function updateSunLight() {
+  if (!mapgl) return;
+  const sun = getSunPos();
+  if (sun.el <= 0) {
+    mapgl.setLight({ color: '#1a1a2e', intensity: 0.1, anchor: 'viewport', position: [1.5, 0, 0] });
+    return;
+  }
+  const azRad = (sun.az - 180) * Math.PI / 180;
+  const polar = (90 - sun.el);
+  mapgl.setLight({
+    color: sun.el < 15 ? '#ffaa44' : '#ffffff',
+    intensity: Math.min(0.9, 0.3 + sun.el/100),
+    anchor: 'map',
+    position: [1.5, sun.az, polar]
+  });
+}
+
+// ════════════════════════════════════════════════════
+// TOGGLES
+// ════════════════════════════════════════════════════
+function toggle3D() {
+  show3D = !show3D;
+  document.getElementById('t-3d').classList.toggle('on', show3D);
+  if (mapgl) {
+    mapgl.setLayoutProperty('3d-buildings', 'visibility', show3D ? 'visible' : 'none');
+    mapgl.setPitch(show3D ? 50 : 0);
+  }
+}
+
+function toggleShadows() {
+  showShadows = !showShadows;
+  document.getElementById('t-shad').classList.toggle('on', showShadows);
+  updateSunLight();
+}
+
+let tiltOn = false;
+function toggleTilt() {
+  tiltOn = !tiltOn;
+  document.getElementById('t-tilt').classList.toggle('on', tiltOn);
+  if (mapgl) mapgl.easeTo({ pitch: tiltOn ? 70 : 50, bearing: tiltOn ? -30 : -10, duration:600 });
+}
+
+// ════════════════════════════════════════════════════
+// SOLAR
+// ════════════════════════════════════════════════════
+function getSunPos() {
+  const dv = document.getElementById('dt-date').value;
+  const tv = document.getElementById('dt-time').value || '12:00';
+  const d = dv ? new Date(dv) : new Date();
+  const [hh, mm] = tv.split(':').map(Number);
+  const mo = d.getMonth();
+  const off = (mo >= 2 && mo <= 9) ? 2 : 1;
+  d.setUTCHours(hh - off, mm, 0, 0);
+  return sunPosition(d, cityCenter[0], cityCenter[1]);
+}
+
+function sunPosition(date, lat, lon) {
+  const JD = date.getTime()/86400000 + 2440587.5;
+  const n = JD - 2451545;
+  const L = (280.46 + 0.9856474*n) % 360;
+  const g = (357.528 + 0.9856003*n) % 360 * Math.PI/180;
+  const lam = (L + 1.915*Math.sin(g) + 0.02*Math.sin(2*g)) * Math.PI/180;
+  const eps = (23.439 - 4e-7*n) * Math.PI/180;
+  const dec = Math.asin(Math.sin(eps)*Math.sin(lam));
+  const RA = Math.atan2(Math.cos(eps)*Math.sin(lam), Math.cos(lam));
+  const GMST = 6.697375 + 0.0657098242*n + (date.getUTCHours() + date.getUTCMinutes()/60);
+  const HA = ((GMST*15 + lon + 360) % 360 - RA*180/Math.PI) * Math.PI/180;
+  const latR = lat * Math.PI/180;
+  const sinAlt = Math.sin(latR)*Math.sin(dec) + Math.cos(latR)*Math.cos(dec)*Math.cos(HA);
+  const el = Math.asin(Math.max(-1,Math.min(1,sinAlt))) * 180/Math.PI;
+  const cosAz = (Math.sin(dec)-Math.sin(latR)*sinAlt)/(Math.cos(latR)*Math.cos(Math.max(0.001,el)*Math.PI/180));
+  let az = Math.acos(Math.max(-1,Math.min(1,cosAz))) * 180/Math.PI;
+  if (Math.sin(HA) > 0) az = 360 - az;
+  return { el, az };
+}
+
+// Actualizar reloj solar en tiempo real
+function updateClock() {
+  const tv = document.getElementById('dt-time').value || '12:00';
+  document.getElementById('sun-clock').textContent = '☀ ' + tv;
+  updateSunLight();
+}
+document.getElementById('dt-time').addEventListener('input', updateClock);
+document.getElementById('dt-date').addEventListener('change', updateClock);
+
+// ════════════════════════════════════════════════════
+// GEOCODING — Nominatim (ciudad + puntos)
+// ════════════════════════════════════════════════════
+let geocTimer = {};
+
+async function geocode(q, bbox) {
+  const bboxStr = bbox ? `&viewbox=${bbox}&bounded=1` : '';
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1${bboxStr}`;
+  const r = await fetch(url, {headers:{'Accept-Language':'es'}});
+  return r.json();
+}
+
+// Ciudad
+document.getElementById('city-input').addEventListener('input', function() {
+  clearTimeout(geocTimer.city);
+  const q = this.value.trim();
+  const sugg = document.getElementById('city-suggs');
+  if (q.length < 2) { sugg.style.display='none'; return; }
+  geocTimer.city = setTimeout(async () => {
+    try {
+      const items = await geocode(q);
+      sugg.innerHTML = '';
+      if (!items.length) { sugg.style.display='none'; return; }
+      items.slice(0,5).forEach(it => {
+        const parts = it.display_name.split(',');
+        const div = document.createElement('div');
+        div.className = 'city-sugg';
+        div.innerHTML = `<strong>${parts[0]}</strong><br><span>${parts.slice(1,3).join(',')}</span>`;
+        div.onclick = () => {
+          cityCenter = [parseFloat(it.lat), parseFloat(it.lon)];
+          document.getElementById('city-input').value = parts[0];
+          sugg.style.display = 'none';
+          if (mapgl) mapgl.flyTo({center:[cityCenter[1],cityCenter[0]], zoom:14, pitch:50, duration:1200});
+          updateClock();
+        };
+        sugg.appendChild(div);
+      });
+      sugg.style.display = 'block';
+    } catch(e) { sugg.style.display='none'; }
+  }, 350);
+});
+document.getElementById('city-input').addEventListener('blur', () => setTimeout(()=>document.getElementById('city-suggs').style.display='none',200));
+
+// Puntos A/B
+function setupAddrInput(inputId, suggId, which) {
+  const input = document.getElementById(inputId);
+  const sugg = document.getElementById(suggId);
+  input.addEventListener('input', function() {
+    clearTimeout(geocTimer[which]);
+    const q = this.value.trim();
+    if (q.length < 3) { sugg.style.display='none'; return; }
+    geocTimer[which] = setTimeout(async () => {
+      try {
+        const cityQ = document.getElementById('city-input').value || '';
+        const items = await geocode(q + (cityQ ? ', ' + cityQ : ''));
+        sugg.innerHTML = '';
+        if (!items.length) { sugg.style.display='none'; return; }
+        items.forEach(it => {
+          const parts = it.display_name.split(',');
+          const div = document.createElement('div');
+          div.className = 'addr-sugg';
+          div.innerHTML = `<strong>${parts[0]}</strong> <span>${parts.slice(1,2).join('')}</span>`;
+          div.onclick = () => {
+            setPoint(which, parseFloat(it.lat), parseFloat(it.lon), parts[0]);
+            sugg.style.display='none';
+          };
+          sugg.appendChild(div);
+        });
+        sugg.style.display = 'block';
+      } catch(e) { sugg.style.display='none'; }
+    }, 350);
+  });
+  input.addEventListener('blur', ()=>setTimeout(()=>sugg.style.display='none',200));
+}
+setupAddrInput('addr-a','sugg-a','a');
+setupAddrInput('addr-b','sugg-b','b');
+
+// ════════════════════════════════════════════════════
+// MARKERS & PUNTOS
+// ════════════════════════════════════════════════════
+let ptA=null, ptB=null, mrkA=null, mrkB=null, pickFor=null;
+
+function makeMarker(label, color) {
+  const el = document.createElement('div');
+  el.style.cssText = `width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+    background:${color};border:2px solid white;box-shadow:0 3px 10px rgba(0,0,0,0.5);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;`;
+  el.innerHTML = `<span style="transform:rotate(45deg);color:white;font-size:12px;font-weight:700;font-family:var(--mono)">${label}</span>`;
+  return el;
+}
+
+function setPoint(which, lat, lon, label) {
+  if (!mapgl) return;
+  if (which === 'a') {
+    ptA = [lon, lat];
+    if (mrkA) mrkA.remove();
+    mrkA = new mapboxgl.Marker({element:makeMarker('A','#7c6af7')}).setLngLat([lon,lat]).addTo(mapgl);
+    document.getElementById('addr-a').value = label;
+  } else {
+    ptB = [lon, lat];
+    if (mrkB) mrkB.remove();
+    mrkB = new mapboxgl.Marker({element:makeMarker('B','#f7a26a')}).setLngLat([lon,lat]).addTo(mapgl);
+    document.getElementById('addr-b').value = label;
+  }
+  updateBtn();
+  if (ptA && ptB) {
+    const bounds = new mapboxgl.LngLatBounds(ptA,ptA).extend(ptB);
+    mapgl.fitBounds(bounds, {padding:{top:80,bottom:80,left:380,right:80}, maxZoom:16});
+  }
+}
+
+function startPick(which) {
+  pickFor = which;
+  mapgl.getCanvas().style.cursor = 'crosshair';
+  const b = document.getElementById('pick-banner');
+  b.textContent = which==='a' ? '⊕ Haz clic para marcar el ORIGEN' : '⊕ Haz clic para marcar el DESTINO';
+  b.style.display = 'block';
+}
+
+function onMapClick(e) {
+  if (!pickFor) return;
+  const {lng, lat} = e.lngLat;
+  setPoint(pickFor, lat, lng, `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+  pickFor = null;
+  mapgl.getCanvas().style.cursor = '';
+  document.getElementById('pick-banner').style.display = 'none';
+}
+
+function updateBtn() {
+  const btn = document.getElementById('calc-btn');
+  const txt = document.getElementById('btn-txt');
+  if (ptA && ptB) { btn.disabled=false; txt.textContent='Calcular ruta en sombra'; }
+  else if (ptA) { btn.disabled=true; txt.textContent='Falta el destino'; }
+  else { btn.disabled=true; txt.textContent='Selecciona origen y destino'; }
+}
+
+// ════════════════════════════════════════════════════
+// ROUTING — OSRM
+// ════════════════════════════════════════════════════
+async function getRoute(a, b) {
+  const url = `https://router.project-osrm.org/route/v1/foot/${a[0]},${a[1]};${b[0]},${b[1]}?overview=full&geometries=geojson&steps=true`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('OSRM ' + r.status);
+  const d = await r.json();
+  if (d.code !== 'Ok') throw new Error(d.message);
+  return d.routes[0];
+}
+
+// ════════════════════════════════════════════════════
+// EDIFICIOS OSM via Overpass
+// ════════════════════════════════════════════════════
+async function getBuildings(coords) {
+  const lons = coords.map(c=>c[0]), lats = coords.map(c=>c[1]);
+  const pad = 0.003;
+  const bbox = `${Math.min(...lats)-pad},${Math.min(...lons)-pad},${Math.max(...lats)+pad},${Math.max(...lons)+pad}`;
+  const q = `[out:json][timeout:20];(way["building"](${bbox}););out center tags;`;
+  const eps = ['https://overpass-api.de/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  for (const ep of eps) {
+    try {
+      const r = await fetch(ep, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'data='+encodeURIComponent(q)});
+      if (!r.ok) continue;
+      const d = await r.json();
+      return d.elements || [];
+    } catch(e) { console.warn(ep, e.message); }
+  }
+  return [];
+}
+
+// ════════════════════════════════════════════════════
+// SOMBRA
+// ════════════════════════════════════════════════════
+function isInShadow(point, sun, buildings) {
+  if (sun.el <= 0) return true;
+  if (sun.el > 72) return false;
+  const [lon, lat] = point;
+  const azRad = sun.az * Math.PI/180;
+  const sdx = -Math.sin(azRad), sdy = -Math.cos(azRad);
+  for (const b of buildings) {
+    const bLat = b.lat||b.center?.lat, bLon = b.lon||b.center?.lon;
+    if (!bLat||!bLon) continue;
+    const h = parseFloat(b.tags?.height)||(parseFloat(b.tags?.['building:levels'])||3)*3;
+    const shadowLen = (h/Math.tan(sun.el*Math.PI/180))/111000;
+    const dx = lon-bLon, dy = lat-bLat;
+    const dist = Math.hypot(dx*111000*Math.cos(lat*Math.PI/180), dy*111000);
+    if (dist > shadowLen+15) continue;
+    const dot = (dx/Math.max(dist/111000,0.000001))*sdx + (dy/Math.max(dist/111000,0.000001))*sdy;
+    if (dot > 0.35 && dist < shadowLen) {
+      const cx = Math.abs((dx/111000)*sdy-(dy/111000)*sdx);
+      if (cx < 0.00018) return true;
+    }
+  }
+  return false;
+}
+
+// ════════════════════════════════════════════════════
+// DIBUJAR RUTA EN MAPA
+// ════════════════════════════════════════════════════
+function drawRoute(segments) {
+  ['route-shade','route-sun'].forEach(id => {
+    if (mapgl.getLayer(id)) mapgl.removeLayer(id);
+    if (mapgl.getSource(id)) mapgl.removeSource(id);
+  });
+
+  const shadeCoords = [], sunCoords = [];
+  segments.forEach(s => {
+    const line = [[s.a[0],s.a[1]],[s.b[0],s.b[1]]];
+    (s.shade ? shadeCoords : sunCoords).push(line);
+  });
+
+  const addLines = (id, coords, color, width) => {
+    if (!coords.length) return;
+    mapgl.addSource(id, { type:'geojson', data:{ type:'FeatureCollection', features: coords.map(c=>({type:'Feature',geometry:{type:'LineString',coordinates:c}})) }});
+    mapgl.addLayer({ id, type:'line', source:id, layout:{'line-join':'round','line-cap':'round'}, paint:{'line-color':color,'line-width':width,'line-opacity':0.9} });
+  };
+
+  addLines('route-sun', sunCoords, '#fbbf24', 5);
+  addLines('route-shade', shadeCoords, '#4ade80', 7);
+}
+
+// ════════════════════════════════════════════════════
+// MAIN CALC
+// ════════════════════════════════════════════════════
+function setStatus(t, loading=false) {
+  document.getElementById('status-txt').textContent = t;
+  document.getElementById('spin-xs').style.display = loading?'block':'none';
+}
+function setBtnLoading(v) {
+  document.getElementById('btn-sp').style.display = v?'block':'none';
+  document.getElementById('btn-txt').textContent = v?'Calculando…':'Calcular ruta en sombra';
+  document.getElementById('calc-btn').disabled = v;
+}
+
+async function calcRoute() {
+  if (!ptA||!ptB||!mapgl) return;
+  setBtnLoading(true);
+  document.getElementById('empty-state').style.display='none';
+  document.getElementById('summary').style.display='none';
+  document.getElementById('seg-list').innerHTML='';
+
+  try {
+    setStatus('Calculando ruta a pie…', true);
+    const route = await getRoute(ptA, ptB);
+    const coords = route.geometry.coordinates;
+    const distKm = (route.distance/1000).toFixed(2);
+    const durMin = Math.round(route.duration/60);
+
+    const sun = getSunPos();
+
+    setStatus('Descargando edificios OSM…', true);
+    const buildings = await getBuildings(coords);
+    setStatus(`Analizando sombras (${buildings.length} edificios)…`, true);
+
+    let totalDist=0, shadeDist=0;
+    const segments = [];
+    for (let i=0; i<coords.length-1; i++) {
+      const a=coords[i], b=coords[i+1];
+      const mid=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+      const dlat=(b[1]-a[1])*111000, dlon=(b[0]-a[0])*111000*Math.cos(a[1]*Math.PI/180);
+      const dist=Math.hypot(dlat,dlon);
+      const shade=isInShadow(mid,sun,buildings);
+      segments.push({a,b,mid,dist,shade});
+      totalDist+=dist;
+      if(shade) shadeDist+=dist;
+    }
+
+    drawRoute(segments);
+
+    const shadePct = totalDist>0 ? Math.round(shadeDist/totalDist*100) : 0;
+    document.getElementById('r-shade').textContent = shadePct+'%';
+    document.getElementById('r-sun').textContent = (100-shadePct)+'%';
+    document.getElementById('r-dist').textContent = distKm+'km';
+    document.getElementById('shade-fill').style.width = shadePct+'%';
+
+    const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'];
+    const dir = sun.el>0 ? dirs[Math.round(sun.az/22.5)%16] : '—';
+    document.getElementById('sol-tags').innerHTML = `
+      <span class="tag"><b>☀</b> El=${sun.el.toFixed(0)}° Az=${sun.el>0?sun.az.toFixed(0)+'°':'—'} ${dir}</span>
+      <span class="tag"><b>🏛</b> ${buildings.length} edif.</span>
+      <span class="tag"><b>🚶</b> ${durMin} min</span>
+      <span class="tag"><b>📏</b> ${distKm} km</span>
+    `;
+
+    // Tramos agrupados
+    const groups=[];
+    let cur=null;
+    for(const s of segments){
+      if(!cur||cur.shade!==s.shade){if(cur)groups.push(cur);cur={shade:s.shade,dist:0,segs:[s]};}
+      else cur.segs.push(s);
+      cur.dist+=s.dist;
+    }
+    if(cur)groups.push(cur);
+
+    const segList = document.getElementById('seg-list');
+    groups.forEach((g,i)=>{
+      const div=document.createElement('div');
+      div.className='seg';
+      div.innerHTML=`
+        <div class="seg-color" style="background:${g.shade?'#4ade80':'#fbbf24'}"></div>
+        <div class="seg-info">
+          <div class="seg-type" style="color:${g.shade?'#4ade80':'#fbbf24'}">${g.shade?'🌿 Sombra':'☀ Sol'}</div>
+          <div class="seg-dist">${Math.round(g.dist)}m · tramo ${i+1}</div>
+        </div>
+        <div class="seg-pct" style="color:${g.shade?'#4ade80':'#fbbf24'}">${Math.round(g.dist/totalDist*100)}%</div>
+      `;
+      const mid=g.segs[Math.floor(g.segs.length/2)].mid;
+      div.onclick=()=>mapgl.flyTo({center:mid,zoom:17,duration:500});
+      segList.appendChild(div);
+    });
+
+    document.getElementById('summary').style.display='block';
+    setBtnLoading(false);
+    setStatus(`${shadePct}% en sombra · ${buildings.length} edificios · ${durMin} min andando`, false);
+
+    // Fit bounds con panel
+    const bounds = new mapboxgl.LngLatBounds();
+    coords.forEach(c=>bounds.extend(c));
+    mapgl.fitBounds(bounds, {padding:{top:80,bottom:80,left:380,right:80},duration:800});
+
+  } catch(e) {
+    setBtnLoading(false);
+    setStatus('Error: '+e.message, false);
+    console.error(e);
+  }
+}
+
+// ════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════
+document.getElementById('dt-date').value = new Date().toISOString().split('T')[0];
+
+loadMapbox(() => initMap());
+</script>
+</body>
+</html>
