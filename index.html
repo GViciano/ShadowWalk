@@ -116,15 +116,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .hint { font-size:10px; color:var(--text3); margin-top:4px; }
 
 /* DateTime */
-#dtrow { padding:10px 16px; border-bottom:1px solid var(--b1); display:flex; gap:7px; flex-shrink:0; }
-.dtcol { flex:1; }
-.dtinp {
-  width:100%; padding:6px 8px;
-  background:var(--card); border:1px solid var(--b2);
-  border-radius:7px; font-family:var(--mono); font-size:11px;
-  color:var(--text); outline:none; color-scheme:dark; letter-spacing:.5px;
-}
-.dtinp:focus { border-color:var(--b3); }
+/* dtrow moved to custom datetime section */
 
 /* Opciones */
 #opts { padding:10px 16px; border-bottom:1px solid var(--b1); flex-shrink:0; }
@@ -250,6 +242,60 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 input[type="date"]::-webkit-calendar-picker-indicator { cursor:pointer; opacity:0.6; }
 /* Chrome respeta lang=es para empezar en lunes automáticamente */
 
+/* DateTime custom */
+#dtrow { padding:10px 16px; border-bottom:1px solid var(--b1); display:flex; gap:7px; flex-shrink:0; }
+.dtcol { flex:1; }
+.dt-trigger {
+  width:100%; padding:6px 9px;
+  background:var(--card); border:1px solid var(--b2);
+  border-radius:7px; font-family:var(--mono); font-size:11px;
+  color:var(--text); cursor:pointer; transition:border-color .15s;
+  display:flex; align-items:center; justify-content:space-between;
+  letter-spacing:.5px; user-select:none;
+}
+.dt-trigger:hover { border-color:var(--b3); }
+.dt-icon { color:var(--text3); font-size:10px; }
+
+/* Calendario */
+#calendar-popup {
+  margin:0 16px 0; border-bottom:1px solid var(--b1);
+  padding:10px 0 12px; flex-shrink:0;
+}
+.cal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; padding:0 2px; }
+.cal-month-lbl { font-family:var(--mono); font-size:11px; font-weight:500; color:var(--text); letter-spacing:.5px; text-transform:uppercase; }
+.cal-nav { background:none; border:1px solid var(--b2); color:var(--text2); border-radius:5px; width:24px; height:24px; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; transition:all .15s; padding:0; }
+.cal-nav:hover { background:var(--card2); color:var(--text); border-color:var(--b3); }
+.cal-weekdays { display:grid; grid-template-columns:repeat(7,1fr); margin-bottom:4px; }
+.cal-weekdays span { text-align:center; font-family:var(--mono); font-size:9px; color:var(--text3); letter-spacing:1px; padding:2px 0; }
+.cal-days { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+.cal-day {
+  aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+  font-family:var(--mono); font-size:11px; border-radius:5px;
+  cursor:pointer; transition:all .1s; color:var(--text2); border:1px solid transparent;
+}
+.cal-day:hover { background:var(--card2); color:var(--text); }
+.cal-day.today { border-color:var(--b2); color:var(--text); }
+.cal-day.selected { background:#7b8cde; color:#fff; border-color:#7b8cde; }
+.cal-day.other-month { color:var(--text3); }
+.cal-day.empty { cursor:default; }
+
+/* Time picker */
+#time-popup {
+  margin:0 16px; border-bottom:1px solid var(--b1);
+  padding:8px 0 12px; flex-shrink:0;
+}
+.time-picker { display:flex; align-items:center; gap:4px; height:120px; }
+.time-col { flex:1; height:100%; overflow-y:auto; scroll-snap-type:y mandatory; border-radius:7px; background:var(--card); border:1px solid var(--b2); }
+.time-col::-webkit-scrollbar { width:0; }
+.time-sep { font-family:var(--mono); font-size:18px; color:var(--text2); font-weight:300; flex-shrink:0; }
+.time-opt {
+  scroll-snap-align:center; padding:7px 0; text-align:center;
+  font-family:var(--mono); font-size:12px; color:var(--text2);
+  cursor:pointer; transition:all .1s; border-radius:5px;
+}
+.time-opt:hover { background:var(--card2); color:var(--text); }
+.time-opt.selected { color:#7b8cde; font-weight:600; background:rgba(123,140,222,0.1); }
+
 /* Toggle switch */
 .sw-row {
   display:flex; align-items:center; justify-content:space-between;
@@ -346,8 +392,42 @@ input[type="date"]::-webkit-calendar-picker-indicator { cursor:pointer; opacity:
   </div>
 
   <div id="dtrow">
-    <div class="dtcol"><div class="lbl">Fecha</div><input class="dtinp" type="date" id="dt-date"/></div>
-    <div class="dtcol"><div class="lbl">Hora</div><input class="dtinp" type="time" id="dt-time"/></div>
+    <div class="dtcol">
+      <div class="lbl">Fecha</div>
+      <div class="dt-trigger" id="date-trigger" onclick="toggleCalendar()">
+        <span id="date-display">--/--/--</span>
+        <span class="dt-icon">▾</span>
+      </div>
+    </div>
+    <div class="dtcol">
+      <div class="lbl">Hora</div>
+      <div class="dt-trigger" id="time-trigger" onclick="toggleTimePicker()">
+        <span id="time-display">--:--</span>
+        <span class="dt-icon">▾</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calendario -->
+  <div id="calendar-popup" style="display:none">
+    <div class="cal-header">
+      <button class="cal-nav" onclick="calNav(-1)">‹</button>
+      <span class="cal-month-lbl" id="cal-month-lbl"></span>
+      <button class="cal-nav" onclick="calNav(1)">›</button>
+    </div>
+    <div class="cal-weekdays">
+      <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+    </div>
+    <div class="cal-days" id="cal-days"></div>
+  </div>
+
+  <!-- Selector de hora -->
+  <div id="time-popup" style="display:none">
+    <div class="time-picker">
+      <div class="time-col" id="hour-col"></div>
+      <div class="time-sep">:</div>
+      <div class="time-col" id="min-col"></div>
+    </div>
   </div>
 
   <div id="opts">
@@ -477,14 +557,136 @@ function toggleSidewalk(checked) {
 // ══════════════════════════════════════════════════
 // SOLAR
 // ══════════════════════════════════════════════════
+// ── DATETIME STATE ──────────────────────────────────
+let _selDate = new Date();   // fecha seleccionada
+let _selHour = 12;
+let _selMin  = 0;
+let _calViewYear, _calViewMonth;
+
 function getSun() {
-  const dv = document.getElementById('dt-date').value;
-  const tv = document.getElementById('dt-time').value || '12:00';
-  const d = dv ? new Date(dv) : new Date();
-  const [hh, mm] = tv.split(':').map(Number);
+  const d = new Date(_selDate);
   const off = (d.getMonth() >= 2 && d.getMonth() <= 9) ? 2 : 1;
-  d.setUTCHours(hh - off, mm, 0, 0);
+  d.setUTCHours(_selHour - off, _selMin, 0, 0);
   return sunPos(d, cityCenter[0], cityCenter[1]);
+}
+
+// ── CALENDAR ─────────────────────────────────────────
+const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function toggleCalendar() {
+  const cal = document.getElementById('calendar-popup');
+  const tp  = document.getElementById('time-popup');
+  tp.style.display = 'none';
+  cal.style.display = cal.style.display==='none' ? 'block' : 'none';
+  if (cal.style.display==='block') renderCalendar();
+}
+
+function toggleTimePicker() {
+  const tp  = document.getElementById('time-popup');
+  const cal = document.getElementById('calendar-popup');
+  cal.style.display = 'none';
+  tp.style.display = tp.style.display==='none' ? 'block' : 'none';
+  if (tp.style.display==='block') renderTimePicker();
+}
+
+function renderCalendar() {
+  const y = _calViewYear, m = _calViewMonth;
+  document.getElementById('cal-month-lbl').textContent = `${MONTHS_ES[m]} ${y}`;
+  const firstDay = new Date(y, m, 1).getDay(); // 0=dom
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  // Ajustar para que empiece en lunes (0=lun)
+  const startOffset = (firstDay + 6) % 7;
+  const today = new Date();
+  const container = document.getElementById('cal-days');
+  container.innerHTML = '';
+  // Celdas vacías al inicio
+  for (let i=0; i<startOffset; i++) {
+    const el = document.createElement('div');
+    el.className = 'cal-day empty';
+    container.appendChild(el);
+  }
+  for (let d=1; d<=daysInMonth; d++) {
+    const el = document.createElement('div');
+    el.className = 'cal-day';
+    el.textContent = d;
+    const isToday = d===today.getDate() && m===today.getMonth() && y===today.getFullYear();
+    const isSel   = d===_selDate.getDate() && m===_selDate.getMonth() && y===_selDate.getFullYear();
+    if (isToday) el.classList.add('today');
+    if (isSel)   el.classList.add('selected');
+    el.onclick = () => {
+      _selDate = new Date(y, m, d);
+      updateDateDisplay();
+      renderCalendar();
+      if (cachedBuildings.length && opts.sh) drawShadows(cachedBuildings, getSun());
+    };
+    container.appendChild(el);
+  }
+}
+
+function calNav(dir) {
+  _calViewMonth += dir;
+  if (_calViewMonth > 11) { _calViewMonth=0; _calViewYear++; }
+  if (_calViewMonth < 0)  { _calViewMonth=11; _calViewYear--; }
+  renderCalendar();
+}
+
+function updateDateDisplay() {
+  const d = _selDate;
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yy = String(d.getFullYear()).slice(-2);
+  document.getElementById('date-display').textContent = `${dd}/${mm}/${yy}`;
+  document.getElementById('sun-pill').textContent = '☀ ' + document.getElementById('time-display').textContent;
+}
+
+// ── TIME PICKER ───────────────────────────────────────
+function renderTimePicker() {
+  const hCol = document.getElementById('hour-col');
+  const mCol = document.getElementById('min-col');
+  hCol.innerHTML = '';
+  mCol.innerHTML = '';
+
+  for (let h=0; h<24; h++) {
+    const el = document.createElement('div');
+    el.className = 'time-opt' + (h===_selHour?' selected':'');
+    el.textContent = String(h).padStart(2,'0');
+    el.onclick = () => {
+      _selHour = h;
+      document.querySelectorAll('#hour-col .time-opt').forEach(e=>e.classList.remove('selected'));
+      el.classList.add('selected');
+      updateTimeDisplay();
+    };
+    hCol.appendChild(el);
+  }
+
+  for (let m=0; m<60; m+=5) {
+    const el = document.createElement('div');
+    const near = Math.round(_selMin/5)*5;
+    el.className = 'time-opt' + (m===near?' selected':'');
+    el.textContent = String(m).padStart(2,'0');
+    el.onclick = () => {
+      _selMin = m;
+      document.querySelectorAll('#min-col .time-opt').forEach(e=>e.classList.remove('selected'));
+      el.classList.add('selected');
+      updateTimeDisplay();
+    };
+    mCol.appendChild(el);
+  }
+
+  // Scroll al seleccionado
+  setTimeout(() => {
+    const selH = hCol.querySelector('.selected');
+    const selM = mCol.querySelector('.selected');
+    if (selH) selH.scrollIntoView({block:'center'});
+    if (selM) selM.scrollIntoView({block:'center'});
+  }, 50);
+}
+
+function updateTimeDisplay() {
+  const t = `${String(_selHour).padStart(2,'0')}:${String(_selMin).padStart(2,'0')}`;
+  document.getElementById('time-display').textContent = t;
+  document.getElementById('sun-pill').textContent = '☀ ' + t;
+  if (cachedBuildings.length && opts.sh) drawShadows(cachedBuildings, getSun());
 }
 
 function sunPos(date, lat, lon) {
@@ -506,12 +708,12 @@ function sunPos(date, lat, lon) {
   return { el, az };
 }
 
-document.getElementById('dt-time').addEventListener('input', () => {
-  document.getElementById('sun-pill').textContent = '☀ ' + (document.getElementById('dt-time').value || '12:00');
-  if (cachedBuildings.length && opts.sh) drawShadows(cachedBuildings, getSun());
-});
-document.getElementById('dt-date').addEventListener('change', () => {
-  if (cachedBuildings.length && opts.sh) drawShadows(cachedBuildings, getSun());
+// Cerrar popups al clicar fuera
+document.addEventListener('click', e => {
+  if (!e.target.closest('#dtrow') && !e.target.closest('#calendar-popup') && !e.target.closest('#time-popup')) {
+    document.getElementById('calendar-popup').style.display = 'none';
+    document.getElementById('time-popup').style.display = 'none';
+  }
 });
 
 // ══════════════════════════════════════════════════
@@ -1174,9 +1376,13 @@ async function calcRoute() {
 // ══════════════════════════════════════════════════
 // Fecha y hora actuales
 const now = new Date();
-document.getElementById('dt-date').value = now.toISOString().split('T')[0];
-document.getElementById('dt-time').value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-document.getElementById('sun-pill').textContent = '☀ ' + document.getElementById('dt-time').value;
+_selDate = now;
+_selHour = now.getHours();
+_selMin  = Math.round(now.getMinutes()/5)*5 % 60;
+_calViewYear  = now.getFullYear();
+_calViewMonth = now.getMonth();
+updateDateDisplay();
+updateTimeDisplay();
 loadMapbox(initMap);
 </script>
 </body>
