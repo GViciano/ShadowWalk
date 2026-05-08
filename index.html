@@ -11,19 +11,19 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500&family=Geist:wght@300;400;500;600&display=swap');
 
 :root {
-  --bg: #080808;
-  --panel: rgba(10,10,10,0.97);
-  --card: #111;
-  --card2: #161616;
-  --b1: rgba(255,255,255,0.05);
-  --b2: rgba(255,255,255,0.09);
-  --b3: rgba(255,255,255,0.15);
-  --text: #e8e8e8;
-  --text2: #a0a0a0;
-  --text3: #555;
-  --shade: #e8e8e8;
-  --sun: #888;
-  --accent: #e8e8e8;
+  --bg: #f0ede8;
+  --panel: rgba(248,245,240,0.97);
+  --card: #fff;
+  --card2: #f5f2ed;
+  --b1: rgba(0,0,0,0.05);
+  --b2: rgba(0,0,0,0.09);
+  --b3: rgba(0,0,0,0.18);
+  --text: #1c1917;
+  --text2: #6b6460;
+  --text3: #a09890;
+  --shade-color: #7eb8a4;
+  --sun-color: #e4a84a;
+  --accent: #7b8cde;
   --mono: 'Geist Mono', 'DM Mono', monospace;
   --sans: 'Geist', 'Instrument Sans', sans-serif;
   --r: 12px;
@@ -136,25 +136,26 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   letter-spacing:.5px; cursor:pointer; transition:all .15s; text-align:center;
   text-transform:uppercase;
 }
-.opt-btn.on { background:var(--card2); border-color:var(--b2); color:var(--text2); }
+.opt-btn.on { background:#e8ecf8; border-color:#b8c4e8; color:#5a6abf; }
 .opt-btn:hover:not(.on) { border-color:var(--b2); color:var(--text3); background:var(--card); }
 
 /* Botón calcular */
 #calc-btn {
   margin:10px 16px; padding:11px;
-  background:var(--text); color:var(--bg);
+  background:#7b8cde; color:#fff;
   border:none; border-radius:8px;
   font-family:var(--sans); font-size:13px; font-weight:600;
   cursor:pointer; transition:all .15s;
   display:flex; align-items:center; justify-content:center; gap:7px;
   flex-shrink:0; letter-spacing:.1px;
+  box-shadow: 0 2px 12px rgba(123,140,222,0.3);
 }
-#calc-btn:hover:not(:disabled) { background:#fff; transform:translateY(-1px); }
+#calc-btn:hover:not(:disabled) { background:#6b7cd0; transform:translateY(-1px); box-shadow:0 4px 16px rgba(123,140,222,0.4); }
 #calc-btn:active { transform:translateY(0); }
-#calc-btn:disabled { background:var(--card2); color:var(--text3); cursor:not-allowed; transform:none; }
+#calc-btn:disabled { background:var(--card2); color:var(--text3); cursor:not-allowed; transform:none; box-shadow:none; }
 #calc-btn .sp {
   width:11px; height:11px;
-  border:1.5px solid rgba(0,0,0,.2); border-top-color:#000;
+  border:1.5px solid rgba(255,255,255,.3); border-top-color:#fff;
   border-radius:50%; animation:spin .7s linear infinite; display:none;
 }
 
@@ -204,9 +205,12 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .metrics { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; margin-bottom:10px; }
 .metric { background:var(--card); border:1px solid var(--b1); border-radius:8px; padding:9px 8px; text-align:center; }
 .mv { font-family:var(--mono); font-size:16px; font-weight:500; margin-bottom:2px; color:var(--text); }
+.mv.shade { color:#5a9a84; }
+.mv.sun   { color:#c48a2a; }
+.mv.dist  { color:#7b8cde; }
 .ml { font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:1px; font-family:var(--mono); }
 .sbar { height:2px; border-radius:1px; background:var(--b1); margin-bottom:10px; overflow:hidden; }
-.sbar-fill { height:100%; background:var(--text); border-radius:1px; transition:width .5s; }
+.sbar-fill { height:100%; background:linear-gradient(90deg,#7eb8a4,#5aa890); border-radius:1px; transition:width .5s; }
 .tags { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px; }
 .tag {
   background:var(--card); border:1px solid var(--b1);
@@ -242,25 +246,47 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 }
 @keyframes spin { to { transform:rotate(360deg); } }
 
+/* Toggle switch */
+.sw-row {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-top:8px; padding-top:8px; border-top:1px solid var(--b1);
+}
+.sw-lbl { font-family:var(--mono); font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text2); }
+.toggle { position:relative; display:inline-block; cursor:pointer; }
+.toggle input { display:none; }
+.toggle-track {
+  display:block; width:36px; height:20px; border-radius:10px;
+  background:var(--b2); border:1px solid var(--b2);
+  transition:all .2s; position:relative;
+}
+.toggle input:checked + .toggle-track { background:#7eb8a4; border-color:#7eb8a4; }
+.toggle-thumb {
+  position:absolute; top:2px; left:2px;
+  width:14px; height:14px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 4px rgba(0,0,0,.2);
+  transition:transform .2s;
+}
+.toggle input:checked + .toggle-track .toggle-thumb { transform:translateX(16px); }
+
 /* Mapbox overrides */
 .mapboxgl-ctrl-group {
-  background:rgba(10,10,10,.97) !important;
+  background:rgba(248,245,240,.97) !important;
   border:1px solid var(--b2) !important;
   border-radius:8px !important;
-  box-shadow:none !important;
+  box-shadow:0 2px 8px rgba(0,0,0,.1) !important;
 }
 .mapboxgl-ctrl-group button { color:var(--text2) !important; background:transparent !important; }
 .mapboxgl-ctrl-group button:hover { background:var(--card2) !important; }
 .mapboxgl-ctrl-attrib { display:none !important; }
 .mapboxgl-popup-content {
-  background:rgba(10,10,10,.98) !important;
+  background:rgba(248,245,240,.98) !important;
   border:1px solid var(--b2) !important;
   border-radius:9px !important;
   color:var(--text) !important;
   padding:10px 13px !important;
   font-family:var(--sans) !important;
   font-size:12px !important;
-  box-shadow:0 8px 32px rgba(0,0,0,.7) !important;
+  box-shadow:0 8px 32px rgba(0,0,0,.15) !important;
 }
 .mapboxgl-popup-tip { display:none !important; }
 .mapboxgl-popup-close-button { color:var(--text3) !important; }
@@ -268,11 +294,11 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 /* Pick banner */
 #pick-banner {
   position:fixed; top:14px; left:50%; transform:translateX(-50%);
-  background:rgba(10,10,10,.98); border:1px solid var(--b3);
+  background:rgba(248,245,240,.98); border:1px solid var(--b3);
   color:var(--text); padding:8px 18px; border-radius:20px;
   font-size:11px; font-weight:500; z-index:200; display:none;
   pointer-events:none; letter-spacing:.3px; font-family:var(--mono);
-  box-shadow:0 4px 20px rgba(0,0,0,.6);
+  box-shadow:0 4px 20px rgba(0,0,0,.15);
 }
 </style>
 </head>
@@ -323,9 +349,15 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   <div id="opts">
     <div class="lbl">Opciones de ruta</div>
     <div class="opt-row">
-      <button class="opt-btn" id="opt-sw" onclick="toggleOpt('sw')">↔ Cambiar de acera</button>
-      <button class="opt-btn on" id="opt-3d" onclick="toggleOpt('3d')">🏙 Edificios 3D</button>
-      <button class="opt-btn on" id="opt-sh" onclick="toggleOpt('sh')">☀ Sombras</button>
+      <button class="opt-btn on" id="opt-3d" onclick="toggleOpt('3d')">Edificios 3D</button>
+      <button class="opt-btn on" id="opt-sh" onclick="toggleOpt('sh')">Sombras</button>
+    </div>
+    <div class="sw-row">
+      <span class="sw-lbl">Cambiar de acera</span>
+      <label class="toggle">
+        <input type="checkbox" id="opt-sw-chk" onchange="toggleSidewalk(this.checked)"/>
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
     </div>
   </div>
 
@@ -348,9 +380,9 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     <div id="summary">
       <div class="sec-hdr">Ruta seleccionada</div>
       <div class="metrics">
-        <div class="metric"><div class="mv g" id="r-shade">—</div><div class="ml">Sombra</div></div>
-        <div class="metric"><div class="mv y" id="r-sun">—</div><div class="ml">Sol</div></div>
-        <div class="metric"><div class="mv p" id="r-dist">—</div><div class="ml">Distancia</div></div>
+        <div class="metric"><div class="mv shade" id="r-shade">—</div><div class="ml">Sombra</div></div>
+        <div class="metric"><div class="mv sun" id="r-sun">—</div><div class="ml">Sol</div></div>
+        <div class="metric"><div class="mv dist" id="r-dist">—</div><div class="ml">Distancia</div></div>
       </div>
       <div class="sbar"><div class="sbar-fill" id="sbar-fill" style="width:0%"></div></div>
       <div class="tags" id="sol-tags"></div>
@@ -413,7 +445,7 @@ function addBuildings3D() {
     id: '3d-buildings', source: 'composite', 'source-layer': 'building',
     filter: ['==', 'extrude', 'true'], type: 'fill-extrusion', minzoom: 13,
     paint: {
-      'fill-extrusion-color': ['interpolate',['linear'],['get','height'],0,'#d0cdc8',20,'#b8b5af',50,'#9c9993',100,'#7a7874'],
+      'fill-extrusion-color': ['interpolate',['linear'],['get','height'],0,'#e8e4de',20,'#d4cfc8',50,'#bab4ac',100,'#9c9690'],
       'fill-extrusion-height': ['interpolate',['linear'],['zoom'],13,0,13.5,['get','height']],
       'fill-extrusion-base': ['interpolate',['linear'],['zoom'],13,0,13.5,['get','min_height']],
       'fill-extrusion-opacity': 0.85
@@ -430,8 +462,12 @@ function toggleOpt(key) {
   if (key === '3d' && map) map.setLayoutProperty('3d-buildings', 'visibility', opts['3d'] ? 'visible' : 'none');
   if (key === 'sh' && cachedBuildings.length) {
     if (opts.sh) drawShadows(cachedBuildings, getSun());
-    else clearLayer('bld-shadows');
+    else { clearLayer('bld-shadows'); clearLayer('tree-shadows'); clearLayer('tree-points'); }
   }
+}
+
+function toggleSidewalk(checked) {
+  opts.sw = checked;
 }
 
 // ══════════════════════════════════════════════════
@@ -538,12 +574,12 @@ function setPoint(which, lon, lat, label) {
   if (which === 'a') {
     ptA = [lon, lat];
     if (mrkA) mrkA.remove();
-    mrkA = new mapboxgl.Marker({element:makeMarkerEl('A','#111')}).setLngLat([lon,lat]).addTo(map);
+    mrkA = new mapboxgl.Marker({element:makeMarkerEl('A','#7b8cde')}).setLngLat([lon,lat]).addTo(map);
     document.getElementById('addr-a').value = label;
   } else {
     ptB = [lon, lat];
     if (mrkB) mrkB.remove();
-    mrkB = new mapboxgl.Marker({element:makeMarkerEl('B','#555')}).setLngLat([lon,lat]).addTo(map);
+    mrkB = new mapboxgl.Marker({element:makeMarkerEl('B','#e4a84a')}).setLngLat([lon,lat]).addTo(map);
     document.getElementById('addr-b').value = label;
   }
   updateBtn();
@@ -792,7 +828,9 @@ function offsetPt(lon, lat, brng, meters) {
 
 function shiftToSidewalk(segs, buildings, sun) {
   const OFFSET = 5; // metros
-  return segs.map(s => {
+
+  // 1. Calcular el offset óptimo para cada segmento
+  const offsets = segs.map(s => {
     const brng = segBearing(s.a, s.b);
     let sL=0, sR=0;
     for (let t=0.25; t<=0.75; t+=0.25) {
@@ -800,13 +838,35 @@ function shiftToSidewalk(segs, buildings, sun) {
       if (isInShadow(offsetPt(mx,my,brng,-OFFSET), sun, buildings)) sL++;
       if (isInShadow(offsetPt(mx,my,brng, OFFSET), sun, buildings)) sR++;
     }
-    const off = sL>=sR ? -OFFSET : OFFSET;
-    const na = offsetPt(s.a[0],s.a[1],brng,off);
-    const nb = offsetPt(s.b[0],s.b[1],brng,off);
-    const nm = [(na[0]+nb[0])/2,(na[1]+nb[1])/2];
-    // Recalcular sombra en la posición desplazada
+    return sL>=sR ? -OFFSET : OFFSET;
+  });
+
+  // 2. Desplazar cada segmento y calcular puntos desplazados
+  const shifted = segs.map((s, i) => {
+    const brng = segBearing(s.a, s.b);
+    const off = offsets[i];
+    const na = offsetPt(s.a[0], s.a[1], brng, off);
+    const nb = offsetPt(s.b[0], s.b[1], brng, off);
+    return { ...s, a:na, b:nb };
+  });
+
+  // 3. Conectar extremos entre segmentos consecutivos:
+  // El punto final de cada segmento se iguala al punto inicial del siguiente
+  // usando el punto medio entre ambos (en el espacio desplazado)
+  for (let i=0; i<shifted.length-1; i++) {
+    const endCur  = shifted[i].b;
+    const startNext = shifted[i+1].a;
+    // Punto de conexión = promedio
+    const join = [(endCur[0]+startNext[0])/2, (endCur[1]+startNext[1])/2];
+    shifted[i].b   = join;
+    shifted[i+1].a = join;
+  }
+
+  // 4. Recalcular mid y shade en posición final
+  return shifted.map(s => {
+    const nm = [(s.a[0]+s.b[0])/2, (s.a[1]+s.b[1])/2];
     const shade = isInShadow(nm, sun, buildings);
-    return {...s, a:na, b:nb, mid:nm, shade};
+    return { ...s, mid:nm, shade };
   });
 }
 
@@ -852,8 +912,8 @@ function drawRoute(segs) {
     map.addSource(id,{type:'geojson',data:{type:'FeatureCollection',features:lines.map(c=>({type:'Feature',geometry:{type:'LineString',coordinates:c}}))}});
     map.addLayer({id,type:'line',source:id,layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':color,'line-width':w,'line-opacity':0.92}});
   };
-  addLines('rt-sun',  sun2,  'rgba(0,0,0,0.25)', 4);
-  addLines('rt-shade',shade, 'rgba(0,0,0,0.85)', 6);
+  addLines('rt-sun',  sun2,  '#e4a84a', 5);
+  addLines('rt-shade',shade, '#7eb8a4', 7);
 }
 
 // ══════════════════════════════════════════════════
@@ -891,15 +951,15 @@ function drawShadows(buildings, sun) {
 
   if (bldFeatures.length) {
     map.addSource('bld-shadows',{type:'geojson',data:{type:'FeatureCollection',features:bldFeatures}});
-    map.addLayer({id:'bld-shadows',type:'fill',source:'bld-shadows',paint:{'fill-color':'#1a1a1a','fill-opacity':0.22}},'3d-buildings');
+    map.addLayer({id:'bld-shadows',type:'fill',source:'bld-shadows',paint:{'fill-color':'#b8c4e8','fill-opacity':0.45}},'3d-buildings');
   }
   if (treeFeatures.length) {
     map.addSource('tree-shadows',{type:'geojson',data:{type:'FeatureCollection',features:treeFeatures}});
-    map.addLayer({id:'tree-shadows',type:'fill',source:'tree-shadows',paint:{'fill-color':'#2a3a2a','fill-opacity':0.3}});
+    map.addLayer({id:'tree-shadows',type:'fill',source:'tree-shadows',paint:{'fill-color':'#a8d5b0','fill-opacity':0.5}});
   }
   if (treePoints.length) {
     map.addSource('tree-points',{type:'geojson',data:{type:'FeatureCollection',features:treePoints}});
-    map.addLayer({id:'tree-points',type:'circle',source:'tree-points',paint:{'circle-color':'#4a5e4a','circle-radius':4,'circle-opacity':0.6,'circle-stroke-color':'#333','circle-stroke-width':1}});
+    map.addLayer({id:'tree-points',type:'circle',source:'tree-points',paint:{'circle-color':'#7eb89a','circle-radius':5,'circle-opacity':0.8,'circle-stroke-color':'#5a9a7a','circle-stroke-width':1.5}});
   }
 }
 
@@ -916,7 +976,7 @@ function renderCards(routes) {
     const {shadePct, totalDist} = analysis;
     const durMin = Math.round(totalDist/1000/4.5*60);
     const distKm = (totalDist/1000).toFixed(2);
-    const fillColor = 'var(--text)';
+    const fillColor = shadePct>50?'#7eb8a4':'#e4a84a';
 
     const card = document.createElement('div');
     card.className = 'rcard' + (i===0?' sel':'') + (badgeClass==='rb-s'?' top':'');
@@ -977,9 +1037,9 @@ function applyRoute(i) {
     const div=document.createElement('div'); div.className='seg';
     const pct=Math.round(g.dist/totalDist*100);
     div.innerHTML=`
-      <div class="seg-bar" style="background:${g.shade?'var(--text)':'var(--b2)'}"></div>
+      <div class="seg-bar" style="background:${g.shade?'#7eb8a4':'#e4a84a'}"></div>
       <div class="seg-info">
-        <div class="seg-type">${g.shade?'— Sombra':'· Sol'}</div>
+        <div class="seg-type" style="color:${g.shade?'#5a9a84':'#c48a2a'}">${g.shade?'Sombra':'Sol'}</div>
         <div class="seg-dist">${Math.round(g.dist)}m · tramo ${idx+1}</div>
       </div>
       <div class="seg-pct">${pct}%</div>`;
