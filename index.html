@@ -246,6 +246,10 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 }
 @keyframes spin { to { transform:rotate(360deg); } }
 
+/* Calendario semana empieza lunes */
+input[type="date"]::-webkit-calendar-picker-indicator { cursor:pointer; opacity:0.6; }
+/* Chrome respeta lang=es para empezar en lunes automáticamente */
+
 /* Toggle switch */
 .sw-row {
   display:flex; align-items:center; justify-content:space-between;
@@ -343,7 +347,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
   <div id="dtrow">
     <div class="dtcol"><div class="lbl">Fecha</div><input class="dtinp" type="date" id="dt-date"/></div>
-    <div class="dtcol"><div class="lbl">Hora</div><input class="dtinp" type="time" id="dt-time" value="12:00"/></div>
+    <div class="dtcol"><div class="lbl">Hora</div><input class="dtinp" type="time" id="dt-time"/></div>
   </div>
 
   <div id="opts">
@@ -426,7 +430,7 @@ function initMap() {
   mapboxgl.accessToken = MBKEY;
   map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/mapbox/light-v11',
+    style: 'mapbox://styles/mapbox/streets-v12',
     center: [cityCenter[1], cityCenter[0]],
     zoom: 15, pitch: 50, bearing: -10, antialias: true
   });
@@ -445,10 +449,10 @@ function addBuildings3D() {
     id: '3d-buildings', source: 'composite', 'source-layer': 'building',
     filter: ['==', 'extrude', 'true'], type: 'fill-extrusion', minzoom: 13,
     paint: {
-      'fill-extrusion-color': ['interpolate',['linear'],['get','height'],0,'#e8e4de',20,'#d4cfc8',50,'#bab4ac',100,'#9c9690'],
+      'fill-extrusion-color': ['interpolate',['linear'],['get','height'],0,'#ddd8d0',20,'#ccc6bc',50,'#b0a89e',100,'#908880'],
       'fill-extrusion-height': ['interpolate',['linear'],['zoom'],13,0,13.5,['get','height']],
       'fill-extrusion-base': ['interpolate',['linear'],['zoom'],13,0,13.5,['get','min_height']],
-      'fill-extrusion-opacity': 0.85
+      'fill-extrusion-opacity': 0.75
     }
   });
 }
@@ -951,7 +955,7 @@ function drawShadows(buildings, sun) {
 
   if (bldFeatures.length) {
     map.addSource('bld-shadows',{type:'geojson',data:{type:'FeatureCollection',features:bldFeatures}});
-    map.addLayer({id:'bld-shadows',type:'fill',source:'bld-shadows',paint:{'fill-color':'#b8c4e8','fill-opacity':0.45}},'3d-buildings');
+    map.addLayer({id:'bld-shadows',type:'fill',source:'bld-shadows',paint:{'fill-color':'#9aaad4','fill-opacity':0.38}},'3d-buildings');
   }
   if (treeFeatures.length) {
     map.addSource('tree-shadows',{type:'geojson',data:{type:'FeatureCollection',features:treeFeatures}});
@@ -1168,7 +1172,11 @@ async function calcRoute() {
 // ══════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════
-document.getElementById('dt-date').value = new Date().toISOString().split('T')[0];
+// Fecha y hora actuales
+const now = new Date();
+document.getElementById('dt-date').value = now.toISOString().split('T')[0];
+document.getElementById('dt-time').value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+document.getElementById('sun-pill').textContent = '☀ ' + document.getElementById('dt-time').value;
 loadMapbox(initMap);
 </script>
 </body>
